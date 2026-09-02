@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OPS/OS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body {
+    margin: 0;
+    background: #000;
+    height: 100%;
+    overflow: hidden;
+    user-select: none;
+  }
+  #wrap {
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: default;
+  }
+  #testout { display: none; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="640" height="400" tabindex="0"></canvas></div>
+<pre id="testout"></pre>
+<script>
+(function () {
+  "use strict";
+
+  var COLS = 80, ROWS = 25, CW = 8, CH = 16;
+  var W = COLS * CW, H = ROWS * CH;
+  var SHIFT = 480;
+  var B1 = 150, B2 = 330;
+
+  var C0 = [0, 0, 0];
+  var C8 = [0x3D, 0x2E, 0x18];
+  var C6 = [0x9A, 0x6B, 0x2F];
+  var C7 = [0xC4, 0xA3, 0x6A];
+  var C14 = [0xE6, 0xC1, 0x5A];
+  var C12 = [0xC4, 0x45, 0x32];
+  var C15 = [0xF3, 0xD9, 0xA0];
+
+  var U2CP = {
+    "█": 0xDB, "■": 0xFE, "∙": 0xF9, "░": 0xB0,
+    "╔": 0xC9, "╗": 0xBB, "╚": 0xC8, "╝": 0xBC, "═": 0xCD, "║": 0xBA,
+    "┌": 0xDA, "┐": 0xBF, "└": 0xC0, "┘": 0xD9, "─": 0xC4, "│": 0xB3,
+    "┬": 0xC2, "┴": 0xC1, "├": 0xC3, "┤": 0xB4, "┼": 0xC5,
+    "╦": 0xCB, "╩": 0xCA, "╠": 0xCC, "╣": 0xB9, "╬": 0xCE
+  };
+
+  var FONT_B64 = "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AAB4zMzM2MzGxsbMAAAAAAAA/sbGwMDAwMDAwAAAAAAAAAAA/mxsbGxsbGwAAAAAAAAA/sZgMBgwYMb+AAAAAAAAAAAAftjY2NjYcAAAAAAAAAAAZmZmZmZ8YGDAAAAAAAAAAHbcGBgYGBgYAAAAAAAAAH4YPGZmZjwYfgAAAAAAAAA4bMbG/sbGbDgAAAAAAAA4bMbGxmxsbGzuAAAAAAAAHjAYDD5mZmZmPAAAAAAAAAAAAH7b29t+AAAAAAAAAAAAAwZ+29vzfmDAAAAAAAAAHDBgYHxgYGAwHAAAAAAAAAB8xsbGxsbGxsYAAAAAAAAAAP4AAP4AAP4AAAAAAAAAAAAYGH4YGAAA/wAAAAAAAAAwGAwGDBgwAH4AAAAAAAAADBgwYDAYDAB+AAAAAAAADhsbGBgYGBgYGBgYGBgYGBgYGBgYGNjY2HAAAAAAAAAAABgYAH4AGBgAAAAAAAAAAAAAdtwAdtwAAAAAAAAAOGxsOAAAAAAAAAAAAAAAAAAAAAAAABgYAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAADwwMDAwM7GxsPBwAAAAAANhsbGxsbAAAAAAAAAAAAABw2DBgyPgAAAAAAAAAAAAAAAAAfHx8fHx8fAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+
+  function decodeFont(b64) {
+    var bin = atob(b64);
+    var u8 = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return u8;
+  }
+  var font = decodeFont(FONT_B64);
+
+  function cp(ch) {
+    if (U2CP[ch] != null) return U2CP[ch];
+    var o = ch.charCodeAt(0);
+    return o < 128 ? o : 0x3F;
+  }
+
+  var chBuf = new Uint8Array(COLS * ROWS);
+  var fgBuf = new Array(COLS * ROWS);
+  var bgBuf = new Array(COLS * ROWS);
+  var i, _n = COLS * ROWS;
+  for (i = 0; i < _n; i++) { fgBuf[i] = C0; bgBuf[i] = C0; chBuf[i] = 32; }
+
+  function clearGrid() {
+    for (var i = 0; i < _n; i++) {
+      chBuf[i] = 32;
+      fgBuf[i] = C0;
+      bgBuf[i] = C0;
+    }
+  }
+  function put(x, y, ch, fg, bg) {
+    if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return;
+    var i = y * COLS + x;
+    chBuf[i] = typeof ch === "number" ? ch : cp(ch);
+    fgBuf[i] = fg || C0;
+    bgBuf[i] = bg || C0;
+  }
+  function text(x, y, s, fg, bg) {
+    s = String(s);
+    for (var i = 0; i < s.length; i++) put(x + i, y, s.charAt(i), fg, bg);
+  }
+  function fill(x, y, w, h, ch, fg, bg) {
+    for (var yy = y; yy < y + h; yy++)
+      for (var xx = x; xx < x + w; xx++) put(xx, yy, ch, fg, bg);
+  }
+
+  var canvas = document.getElementById("c");
+  var ctx = canvas.getContext("2d");
+  var buf = document.createElement("canvas");
+  buf.width = W;
+  buf.height = H;
+  var bctx = buf.getContext("2d");
+  var img = bctx.createImageData(W, H);
+  var scale = 2;
+
+  function fit() {
+    var sw = window.innerWidth || 1280;
+    var sh = window.innerHeight || 800;
+    scale = Math.max(1, Math.floor(Math.min(sw / W, sh / H)));
+    canvas.width = W * scale;
+    canvas.height = H * scale;
+    canvas.style.width = canvas.width + "px";
+    canvas.style.height = canvas.height + "px";
+    ctx.imageSmoothingEnabled = false;
+  }
+  window.addEventListener("resize", fit);
+  fit();
+
+  function raster() {
+    var data = img.data;
+    for (var y = 0; y < ROWS; y++) {
+      for (var x = 0; x < COLS; x++) {
+        var idx = y * COLS + x;
+        var code = chBuf[idx];
+        var fg = fgBuf[idx];
+        var bg = bgBuf[idx];
+        var go = code * 16;
+        var ox = x * CW, oy = y * CH;
+        for (var row = 0; row < 16; row++) {
+          var bits = font[go + row];
+          var py = (oy + row) * W;
+          for (var col = 0; col < 8; col++) {
+            var on = bits & (0x80 >> col);
+            var p = (py + ox + col) << 2;
+            var c = on ? fg : bg;
+            data[p] = c[0];
+            data[p + 1] = c[1];
+            data[p + 2] = c[2];
+            data[p + 3] = 255;
+          }
+        }
+      }
+    }
+    bctx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
+  }
+
+  /* ---------- sim ---------- */
+  var ET = {
+    FILTER_CLOG: { sector: "mining", read: "filter dP high", verb: "repair", need: "HIGH+", inc: [24, 16, 10], hold: [12, 9, 6] },
+    BELT_SLIP:   { sector: "mining", read: "belt slip",      verb: "repair", need: "HIGH+", inc: [16, 12, 8],  hold: [12, 9, 6] },
+    HEAT_WARN:   { sector: "mining", read: "heat trip",      verb: "safe",   need: "MAX",   inc: [20, 14, 10], hold: [12, 9, 6] },
+    JAM_SAFE:    { sector: "mining", read: "feed jam",       verb: "repair", need: "ANY",   inc: [28, 20, 14], hold: [12, 9, 6] },
+    CELL_DIP:    { sector: "power",  read: "cell output low",verb: "mode_or_repair", need: "ANY", inc: [20, 14, 10], hold: [12, 9, 6] },
+    GRID_FLICKER:{ sector: "power",  read: "grid unstable",  verb: "expire", need: "ANY",   inc: [10, 8, 6],   hold: [0, 0, 0] },
+    BROWNOUT:    { sector: "power",  read: "breaker open",   verb: "repair", need: "NONE",  inc: [0, 0, 0],    hold: [12, 9, 6] }
+  };
+
+  var APPS = {
+    power:  { id: "power",  title: "power",  ws: 1, x: 1, y: 1, w: 78, h: 7 },
+    mining: { id: "mining", title: "mining", ws: 2, x: 1, y: 1, w: 39, h: 9 },
+    repair: { id: "repair", title: "repair", ws: 2, x: 41, y: 1, w: 32, h: 6 },
+    radar:  { id: "radar",  title: "radar",  ws: 3, x: 1, y: 1, w: 78, h: 22 }
+  };
+
+  var S, WM, anim, rng;
+
+  function rand() {
+    rng = (rng * 1664525 + 1013904223) >>> 0;
+    return rng / 4294967296;
+  }
+
+  function band() {
+    var e = S.elapsed;
+    if (e < B1) return 0;
+    if (e < B2) return 1;
+    return 2;
+  }
+  function holdS() { return [12, 9, 6][band()]; }
+  function clockCap() { return band() >= 2 ? 2 : 1; }
+  function cooldown() { return [20, 14, 10][band()]; }
+
+  function rank(m) { return m === "SAFE" ? 0 : m === "HIGH" ? 1 : 2; }
+
+  function supply() {
+    var s = 80;
+    if (S.events.some(function (e) { return e.type === "CELL_DIP"; })) s = 56;
+    if (S.events.some(function (e) { return e.type === "BROWNOUT" || (e.type === "CELL_DIP" && e.phase === "hold"); }))
+      s = Math.min(s, 40);
+    return s;
+  }
+  function demand() {
+    var d = S.mode === "SAFE" ? 24 : S.mode === "HIGH" ? 48 : 76;
+    if (S.emergency) d += 30;
+    return d;
+  }
+
+  function sectorState(sec) {
+    if (sec === "mining" && S.heat >= 100) return "FAULT";
+    if (sec === "security" && S.radarBlank) return "FAULT";
+    var es = S.events.filter(function (e) { return e.sector === sec; });
+    if (es.some(function (e) { return e.phase === "hold"; })) return "FAULT";
+    if (es.length) return "STRESSED";
+    if (sec === "power" && demand() > supply()) return "STRESSED";
+    return "STABLE";
+  }
+
+  function liveClocks() { return S.events.length; }
+
+  function makeEvent(type) {
+    var d = ET[type];
+    var b = band();
+    return {
+      type: type,
+      sector: d.sector,
+      read: d.read,
+      verb: d.verb,
+      phase: d.inc[b] > 0 ? "incident" : "hold",
+      incident: d.inc[b],
+      hold: d.hold[b],
+      t: d.inc[b] > 0 ? d.inc[b] : d.hold[b]
+    };
+  }
+
+  function spawnEvent(type) {
+    var d = ET[type];
+    if (!d) return null;
+    if (S.ended) return null;
+    if (S.events.some(function (e) { return e.sector === d.sector && type !== "BROWNOUT"; }) && type !== "BROWNOUT")
+      return null;
+    var e = makeEvent(type);
+    if (e.phase === "hold") enterFault(e);
+    S.events.push(e);
+    S.spawnCd = cooldown();
+    if (type === "FILTER_CLOG") S.lastClog = S.elapsed;
+    if (type === "GRID_FLICKER") S.flickerBand = band();
+    if (type === "CELL_DIP") S.lastDip = S.elapsed;
+    return e;
+  }
+
+  function enterFault(e) {
+    e.phase = "hold";
+    e.t = e.hold > 0 ? e.hold : holdS();
+    if (e.verb === "safe") e.verb = "repair";
+    if (e.verb === "expire") return;
+    if (e.sector === "mining") {
+      if (!S.ignoredRead) S.ignoredRead = e.read;
+      S.emergency = true;
+      if (S.token < 2) S.token = 2;
+    }
+    if (e.sector === "power") {
+      if (S.token < 3) S.token = 3;
+    }
+  }
+
+  function stepCascade() {
+    if (S.ended) return;
+    if (S.token < 2) S.token = 2;
+    S.token += 1;
+    if (S.token === 3) {
+      S.events = S.events.filter(function (e) { return e.type !== "GRID_FLICKER"; });
+      var pe = S.events.filter(function (e) { return e.sector === "power"; })[0];
+      if (pe) {
+        pe.phase = "hold";
+        pe.t = holdS();
+        pe.verb = "repair";
+        pe.read = pe.type === "CELL_DIP" ? pe.read : "breaker open";
+      } else {
+        spawnEvent("BROWNOUT");
+        S.token = Math.max(S.token, 3);
+      }
+    }
+    if (S.token >= 4) S.radarBlank = true;
+    if (S.token >= 6) {
+      S.token = 6;
+      S.ended = "kill";
+    }
+  }
+
+  function clearEvent(e) {
+    S.events = S.events.filter(function (x) { return x !== e; });
+    if (e.sector === "mining") {
+      if (S.token <= 2) {
+        S.token = 0;
+        S.emergency = false;
+        S.ignoredRead = "";
+      }
+    }
+    if (e.sector === "power") {
+      if (S.token === 3) {
+        /* repaired C before D — stop auto-advance */
+        S.cascadeArm = 0;
+      }
+    }
+  }
+
+  function canRepair(e) {
+    if (!e) return false;
+    if (e.verb === "repair" || e.verb === "mode_or_repair") return true;
+    if (e.verb === "safe" && e.phase === "hold") return true;
+    return false;
+  }
+
+  function repairTargets() {
+    var list = S.events.filter(canRepair);
+    list.sort(function (a, b) {
+      var fa = a.phase === "hold" ? 0 : 1;
+      var fb = b.phase === "hold" ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      var sa = a.sector === "mining" ? 0 : 1;
+      var sb = b.sector === "mining" ? 0 : 1;
+      return sa - sb;
+    });
+    return list;
+  }
+
+  function doRepair() {
+    if (S.ended) return false;
+    var t = repairTargets();
+    if (!t.length) return false;
+    clearEvent(t[0]);
+    S.denied = 0;
+    return true;
+  }
+
+  function setMode(m) {
+    if (S.ended) return;
+    if (m !== "SAFE" && m !== "HIGH" && m !== "MAX") return;
+    var old = S.mode;
+    var dropped = rank(m) < rank(old);
+    S.mode = m;
+    if (dropped) {
+      S.events.slice().forEach(function (e) {
+        if (e.phase !== "incident") return;
+        if (e.type === "CELL_DIP") clearEvent(e);
+        if (e.type === "HEAT_WARN" && m === "SAFE") clearEvent(e);
+      });
+    }
+  }
+
+  function buyUpgrade(which) {
+    var cost = which === "classify" ? 20 : 30;
+    if (S.materials < cost) {
+      S.denied = 0.6;
+      S.deniedOn = which;
+      return false;
+    }
+    if (which === "classify") {
+      if (S.classify) { S.denied = 0.6; S.deniedOn = which; return false; }
+      S.materials -= cost;
+      S.classify = true;
+    } else {
+      if (S.early) { S.denied = 0.6; S.deniedOn = which; return false; }
+      S.materials -= cost;
+      S.early = true;
+    }
+    return true;
+  }
+
+  function maybeSpawn(dt) {
+    if (S.ended) return;
+    S.spawnCd -= dt;
+
+    if ((S.mode === "HIGH" || S.mode === "MAX") && !S.events.some(function (e) { return e.sector === "mining"; })) {
+      S.highTime += dt;
+      if (S.highTime >= 5 && (S.lastClog < 0 || S.elapsed - S.lastClog >= 36)) {
+        spawnEvent("FILTER_CLOG");
+        S.highTime = 0;
+        return;
+      }
+    } else {
+      S.highTime = 0;
+    }
+
+    if (S.elapsed < 8) return;
+    if (S.spawnCd > 0) return;
+    if (liveClocks() >= clockCap()) return;
+
+    var miningBusy = S.events.some(function (e) { return e.sector === "mining"; });
+    var powerBusy = S.events.some(function (e) { return e.sector === "power"; });
+    var cands = [];
+    function add(t, w) { for (var i = 0; i < w; i++) cands.push(t); }
+
+    if (!miningBusy) {
+      if (S.mode === "HIGH" || S.mode === "MAX") {
+        add("FILTER_CLOG", 5);
+        add("BELT_SLIP", 3);
+      }
+      if (S.mode === "MAX" && S.heat >= 70) add("HEAT_WARN", 6);
+      if (S.mode === "SAFE" && S.elapsed > 28) add("JAM_SAFE", 1);
+    }
+    if (!powerBusy) {
+      if (S.lastDip < 0 || S.elapsed - S.lastDip > 48) add("CELL_DIP", 2);
+      if (S.flickerBand !== band()) add("GRID_FLICKER", 2);
+    }
+    if (!cands.length) {
+      S.spawnCd = 4;
+      return;
+    }
+    spawnEvent(cands[Math.floor(rand() * cands.length)]);
+  }
+
+  function tickEvents(dt) {
+    S.events.slice().forEach(function (e) {
+      e.t -= dt;
+      if (e.t > 0) return;
+      if (e.verb === "expire" || e.type === "GRID_FLICKER") {
+        S.events = S.events.filter(function (x) { return x !== e; });
+        return;
+      }
+      if (e.phase === "incident") {
+        enterFault(e);
+        return;
+      }
+      /* hold expired — ignored FAULT steps token once */
+      if (!S.ignoredRead) S.ignoredRead = e.read;
+      stepCascade();
+      if (S.ended) return;
+      e.t = holdS();
+    });
+  }
+
+  function tickHeat(dt) {
+    if (S.mode === "SAFE") S.heat = Math.max(0, S.heat - 3.5 * dt);
+    else if (S.mode === "HIGH") S.heat = Math.min(100, S.heat + 0.10 * dt);
+    else S.heat = Math.min(100, S.heat + 0.85 * dt);
+
+    if (S.heat >= 100) {
+      S.heat = 100;
+      var hw = S.events.filter(function (e) { return e.type === "HEAT_WARN"; })[0];
+      if (hw) {
+        if (hw.phase === "incident") enterFault(hw);
+      } else if (!S.events.some(function (e) { return e.sector === "mining"; })) {
+        var e = makeEvent("HEAT_WARN");
+        e.phase = "hold";
+        e.t = e.hold;
+        e.verb = "repair";
+        S.events.push(e);
+        enterFault(e);
+      }
+    }
+  }
+
+  function tickExtract(dt) {
+    if (sectorState("mining") === "FAULT") return;
+    var rate = S.mode === "SAFE" ? 0.35 : S.mode === "HIGH" ? 0.70 : 1.225;
+    var g = rate * dt;
+    S.materials += g;
+    S.credits += g;
+  }
+
+  function tick(dt) {
+    if (S.ended) return;
+    S.elapsed += dt;
+    S.remaining = Math.max(0, SHIFT - S.elapsed);
+    if (S.denied > 0) S.denied = Math.max(0, S.denied - dt);
+    tickHeat(dt);
+    tickExtract(dt);
+    tickEvents(dt);
+    if (S.ended) return;
+    maybeSpawn(dt);
+    if (S.remaining <= 0) {
+      S.remaining = 0;
+      if (S.token < 6) S.ended = "win";
+    }
+  }
+
+  function resetSim(seed) {
+    rng = seed == null ? (Date.now() >>> 0) || 1 : seed;
+    S = {
+      elapsed: 0,
+      remaining: SHIFT,
+      mode: "SAFE",
+      heat: 22,
+      materials: 0,
+      credits: 0,
+      events: [],
+      token: 0,
+      emergency: false,
+      radarBlank: false,
+      classify: false,
+      early: false,
+      ignoredRead: "",
+      ended: "",
+      spawnCd: 8,
+      highTime: 0,
+      lastClog: -1,
+      lastDip: -1,
+      flickerBand: -1,
+      denied: 0,
+      deniedOn: "",
+      cascadeArm: 0
+    };
+    WM = {
+      ws: 2,
+      focus: { 1: "power", 2: "mining", 3: "radar" },
+      open: { power: true, mining: true, repair: true, radar: true }
+    };
+    anim = { t: 0, faultOn: true, caretOn: true, flick: true };
+  }
+
+  function setWS(n) {
+    if (n < 1 || n > 3) return;
+    WM.ws = n;
+  }
+
+  function focusedApp() {
+    return WM.focus[WM.ws] || null;
+  }
+
+  function appsOnWS(ws) {
+    var order = ["power", "mining", "repair", "radar"];
+    return order.filter(function (id) {
+      return APPS[id].ws === ws && WM.open[id];
+    });
+  }
+
+  function launch(id) {
+    var a = APPS[id];
+    if (!a) return;
+    WM.open[id] = true;
+    WM.ws = a.ws;
+    WM.focus[a.ws] = id;
+  }
+
+  function closeFocused() {
+    var id = focusedApp();
+    if (!id || !WM.open[id]) return;
+    WM.open[id] = false;
+    var rest = appsOnWS(WM.ws);
+    WM.focus[WM.ws] = rest.length ? rest[0] : null;
+  }
+
+  function focusNext() {
+    var list = appsOnWS(WM.ws);
+    if (list.length < 2) {
+      if (list.length === 1) WM.focus[WM.ws] = list[0];
+      return;
+    }
+    var cur = focusedApp();
+    var i = list.indexOf(cur);
+    WM.focus[WM.ws] = list[(i + 1) % list.length];
+  }
+
+  function hitApp(cx, cy) {
+    var list = appsOnWS(WM.ws);
+    /* topmost: focused last in paint, first in hit */
+    var foc = focusedApp();
+    if (foc && WM.open[foc]) {
+      var a = APPS[foc];
+      if (cx >= a.x && cy >= a.y && cx < a.x + a.w && cy < a.y + a.h) return foc;
+    }
+    for (var i = list.length - 1; i >= 0; i--) {
+      var id = list[i];
+      var b = APPS[id];
+      if (cx >= b.x && cy >= b.y && cx < b.x + b.w && cy < b.y + b.h) return id;
+    }
+    return null;
+  }
+
+  /* ---------- draw ---------- */
+  function drawWindow(a, focused) {
+    var x = a.x, y = a.y, w = a.w, h = a.h;
+    var tl, tr, bl, br, hb, vb, frame, tcol;
+    if (focused) {
+      tl = "╔"; tr = "╗"; bl = "╚"; br = "╝"; hb = "═"; vb = "║";
+      frame = C15; tcol = C14;
+    } else {
+      tl = "┌"; tr = "┐"; bl = "└"; br = "┘"; hb = "─"; vb = "│";
+      frame = C8; tcol = C6;
+    }
+    fill(x, y, w, h, " ", C0, C0);
+    put(x, y, tl, frame);
+    put(x + w - 1, y, tr, frame);
+    put(x, y + h - 1, bl, frame);
+    put(x + w - 1, y + h - 1, br, frame);
+    var xx, yy;
+    for (yy = y + 1; yy < y + h - 1; yy++) {
+      put(x, yy, vb, frame);
+      put(x + w - 1, yy, vb, frame);
+    }
+    for (xx = x + 1; xx < x + w - 1; xx++) {
+      put(xx, y, hb, frame);
+      put(xx, y + h - 1, hb, frame);
+    }
+    var run = " " + a.title + " ";
+    if (2 + run.length <= w - 2) text(x + 2, y, run, tcol);
+  }
+
+  function bar16(x, y, filln, fillFg) {
+    put(x, y, "[", C8);
+    for (var i = 0; i < 16; i++) {
+      if (i < filln) put(x + 1 + i, y, "█", fillFg);
+      else put(x + 1 + i, y, " ", C0);
+    }
+    put(x + 17, y, "]", C8);
+  }
+
+  function heatColor(h) {
+    if (h >= 80) return C12;
+    if (h >= 50) return C14;
+    return C7;
+  }
+  function modeColor(m) {
+    if (m === "MAX") return C12;
+    if (m === "HIGH") return C7;
+    return C6;
+  }
+  function stateColor(st) {
+    if (st === "FAULT") return C12;
+    if (st === "STRESSED") return C14;
+    return C6;
+  }
+
+  function fmt3(n) {
+    n = Math.floor(n);
+    var s = String(n);
+    while (s.length < 3) s = " " + s;
+    return s;
+  }
+  function fmt4(n) {
+    n = Math.floor(n);
+    var s = String(n);
+    while (s.length < 4) s = " " + s;
+    return s;
+  }
+  function clockStr(sec) {
+    sec = Math.max(0, Math.ceil(sec - 0.0001));
+    var m = Math.floor(sec / 60);
+    var s = sec % 60;
+    return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function drawChrome() {
+    fill(0, 0, 80, 1, " ", C0, C0);
+    function tab(x, label, n) {
+      if (WM.ws === n) text(x, 0, label, C15, C14);
+      else text(x, 0, label, C6, C0);
+    }
+    tab(0, " 1 PWR ", 1);
+    tab(8, " 2 MINE ", 2);
+    tab(17, " 3 SEC ", 3);
+
+    var mode = S.mode;
+    var modePad = (mode + "    ").slice(0, 4);
+    text(36, 0, modePad, modeColor(mode));
+
+    var dem = demand(), sup = supply();
+    var enCol = dem >= sup * 0.9 ? C12 : C7;
+    var clk = clockStr(S.remaining);
+    text(80 - clk.length, 0, clk, C14);
+    var res = "EN " + Math.floor(sup) + "  MAT " + Math.floor(S.materials) + "  CR " + Math.floor(S.credits);
+    var rx = 80 - clk.length - 2 - res.length;
+    if (rx < 42) rx = 42;
+    text(rx, 0, res, C7);
+    text(rx, 0, "EN", enCol);
+    var nstr = String(Math.floor(sup));
+    text(rx + 3, 0, nstr, enCol);
+  }
+
+  function drawKeys() {
+    text(1, 24, "1 2 3 ws   s h m mode   tab focus   q close   enter repair", C8);
+  }
+
+  function miningEvent() {
+    return S.events.filter(function (e) { return e.sector === "mining"; })[0] || null;
+  }
+  function powerEvent() {
+    return S.events.filter(function (e) { return e.sector === "power"; })[0] || null;
+  }
+
+  function troughVal() {
+    var filter = S.mode === "SAFE" ? 14 : S.mode === "HIGH" ? 28 : 42;
+    var belt = S.mode === "SAFE" ? 12 : S.mode === "HIGH" ? 22 : 36;
+    var pump = 25;
+    var e = miningEvent();
+    if (e) {
+      if (e.type === "FILTER_CLOG") filter = e.phase === "hold" ? 100 : 94;
+      if (e.type === "BELT_SLIP") belt = e.phase === "hold" ? 100 : 88;
+      if (e.type === "JAM_SAFE") pump = e.phase === "hold" ? 96 : 80;
+      if (e.type === "HEAT_WARN") { /* heat trough handles it */ }
+    }
+    return { filter: filter, belt: belt, pump: pump };
+  }
+
+  function drawMining(a, focused) {
+    drawWindow(a, focused);
+    var x = a.x, y = a.y;
+    var st = sectorState("mining");
+    text(x + 2, y + 1, S.mode, modeColor(S.mode));
+    var stCol = stateColor(st);
+    if (st === "FAULT" && !anim.faultOn) stCol = C0;
+    var stStr = st;
+    text(x + a.w - 2 - stStr.length, y + 1, stStr, stCol);
+
+    var tv = troughVal();
+    var me = miningEvent();
+    function row(yy, label, val, failing) {
+      text(x + 2, yy, (label + "       ").slice(0, 7), C6);
+      var n = Math.max(0, Math.min(16, Math.round(val / 100 * 16)));
+      var fg = C7;
+      if (label === "heat") fg = heatColor(val);
+      else if (failing) fg = st === "FAULT" ? C12 : C14;
+      bar16(x + 9, yy, n, fg);
+      var showOk = !failing && label !== "heat";
+      if (showOk) text(x + 28, yy, "  ok", C6);
+      else text(x + 28, yy, fmt3(Math.floor(val)), C7);
+    }
+    row(y + 3, "heat", S.heat, me && me.type === "HEAT_WARN");
+    row(y + 4, "filter", tv.filter, me && me.type === "FILTER_CLOG");
+    row(y + 5, "belt", tv.belt, me && me.type === "BELT_SLIP");
+    row(y + 6, "pump", tv.pump, me && me.type === "JAM_SAFE");
+    if (me) {
+      var rc = st === "FAULT" ? C12 : C14;
+      if (st === "FAULT" && !anim.faultOn) rc = C0;
+      text(x + 2, y + 7, me.read, rc);
+    }
+  }
+
+  function drawPower(a, focused) {
+    drawWindow(a, focused);
+    var x = a.x, y = a.y;
+    var st = sectorState("power");
+    var stCol = stateColor(st);
+    if (st === "FAULT" && !anim.faultOn) stCol = C0;
+    text(x + 2, y + 1, st, stCol);
+    var sup = supply(), dem = demand();
+    var pe = powerEvent();
+    var flickerDim = pe && pe.type === "GRID_FLICKER" && !anim.flick;
+    text(x + 2, y + 3, "SUP", C6);
+    bar16(x + 6, y + 3, Math.max(0, Math.min(16, Math.round(sup / 100 * 16))), C7);
+    text(x + 25, y + 3, fmt3(Math.floor(sup)), C7);
+    text(x + 2, y + 4, "DEM", C6);
+    var dfg = dem > sup ? C12 : C7;
+    if (flickerDim) dfg = C8;
+    bar16(x + 6, y + 4, Math.max(0, Math.min(16, Math.round(dem / 100 * 16))), dfg);
+    text(x + 25, y + 4, fmt3(Math.floor(dem)), dfg);
+    if (pe) {
+      var rc = st === "FAULT" ? C12 : C14;
+      if (st === "FAULT" && !anim.faultOn) rc = C0;
+      text(x + 2, y + 5, pe.read, rc);
+    }
+  }
+
+  function drawRepair(a, focused) {
+    drawWindow(a, focused);
+    var x = a.x, y = a.y;
+    var t = repairTargets();
+    if (t.length) {
+      t.forEach(function (e, i) {
+        if (i > 2) return;
+        var col = e.phase === "hold" ? C12 : C14;
+        if (e.phase === "hold" && !anim.faultOn) col = C0;
+        var bg = C0;
+        if (focused && i === 0) {
+          bg = C14;
+          col = C15;
+        }
+        var line = (e.read + "                              ").slice(0, a.w - 4);
+        text(x + 2, y + 1 + i, line, col, bg);
+      });
+      return;
+    }
+    if (S.denied > 0) {
+      text(x + 2, y + 1, "denied", C12);
+      return;
+    }
+    var c1 = S.classify ? C6 : C7;
+    var c2 = S.early ? C6 : C7;
+    text(x + 2, y + 1, "classify", c1);
+    text(x + 2, y + 2, "early", c2);
+  }
+
+  var DUST = [
+    [14, 4], [28, 6], [51, 3], [67, 8], [9, 12],
+    [22, 17], [44, 15], [61, 18], [33, 10], [70, 13]
+  ];
+
+  function drawRadar(a, focused) {
+    drawWindow(a, focused);
+    var x = a.x, y = a.y, w = a.w, h = a.h;
+    if (S.radarBlank) {
+      var msg = "NO SIGNAL";
+      var tx = x + 1 + Math.floor((w - 2 - msg.length) / 2);
+      var ty = y + 1 + Math.floor((h - 2) / 2);
+      text(tx, ty, msg, C12);
+      return;
+    }
+    var pe = powerEvent();
+    var hideDust = pe && pe.type === "GRID_FLICKER" && !anim.flick;
+    if (!hideDust) {
+      DUST.forEach(function (p) {
+        put(x + 1 + p[0], y + 1 + p[1], "∙", C8);
+      });
+    }
+  }
+
+  function drawEnd() {
+    fill(0, 0, 80, 25, " ", C0, C0);
+    var lines, col, startY;
+    if (S.ended === "win") {
+      lines = ["SHIFT END", "producing", "CR " + Math.floor(S.credits)];
+      col = C7;
+    } else {
+      lines = [
+        "SITE KILL",
+        "ignored: " + (S.ignoredRead || "filter dP high"),
+        "emergency draw",
+        "brownout",
+        "radar blank",
+        "intrusion"
+      ];
+      col = C12;
+    }
+    startY = 8;
+    lines.forEach(function (ln, i) {
+      var c = i === 0 ? col : (S.ended === "win" ? C7 : C12);
+      if (i === 0 && S.ended === "kill") c = C12;
+      text(10, startY + i, ln, c);
+    });
+  }
+
+  function draw() {
+    clearGrid();
+    if (S.ended) {
+      drawEnd();
+      raster();
+      return;
+    }
+    drawChrome();
+    var list = appsOnWS(WM.ws);
+    var foc = focusedApp();
+    list.forEach(function (id) {
+      if (id === foc) return;
+      paintApp(id, false);
+    });
+    if (foc && WM.open[foc]) paintApp(foc, true);
+    drawKeys();
+    raster();
+  }
+
+  function paintApp(id, focused) {
+    var a = APPS[id];
+    if (id === "mining") drawMining(a, focused);
+    else if (id === "power") drawPower(a, focused);
+    else if (id === "repair") drawRepair(a, focused);
+    else if (id === "radar") drawRadar(a, focused);
+  }
+
+  /* ---------- input ---------- */
+  function isSuper(e) {
+    return !!(e.metaKey || e.getModifierState && (e.getModifierState("OS") || e.getModifierState("Super") || e.getModifierState("Meta")));
+  }
+
+  function onKey(e) {
+    if (S.ended) return;
+    var k = e.key;
+    var sup = isSuper(e);
+    var typing = false; /* grep field skipped */
+
+    if (!typing) {
+      if (k === "1" || (sup && k === "1")) { setWS(1); e.preventDefault(); return; }
+      if (k === "2" || (sup && k === "2")) { setWS(2); e.preventDefault(); return; }
+      if (k === "3" || (sup && k === "3")) { setWS(3); e.preventDefault(); return; }
+      if (k === "Tab") { focusNext(); e.preventDefault(); return; }
+      if (k === "q" || k === "Q") { closeFocused(); e.preventDefault(); return; }
+      if (sup && (k === "p" || k === "P")) { launch("power"); e.preventDefault(); return; }
+      if (sup && (k === "m" || k === "M")) { launch("mining"); e.preventDefault(); return; }
+      if (sup && (k === "r" || k === "R")) { launch("repair"); e.preventDefault(); return; }
+      if (sup && (k === "s" || k === "S")) { launch("radar"); e.preventDefault(); return; }
+      if (k === "s" || k === "S") { setMode("SAFE"); e.preventDefault(); return; }
+      if (k === "h" || k === "H") { setMode("HIGH"); e.preventDefault(); return; }
+      if (k === "m" || k === "M") { setMode("MAX"); e.preventDefault(); return; }
+      if (k === "[" ) {
+        setMode(S.mode === "MAX" ? "HIGH" : "SAFE");
+        e.preventDefault(); return;
+      }
+      if (k === "]") {
+        setMode(S.mode === "SAFE" ? "HIGH" : "MAX");
+        e.preventDefault(); return;
+      }
+    }
+    if ((k === "Enter" || k === " ") && focusedApp() === "repair") {
+      if (repairTargets().length) doRepair();
+      e.preventDefault();
+      return;
+    }
+    if (k === "/" || k === "'") e.preventDefault();
+  }
+
+  function onClick(ev) {
+    if (S.ended) return;
+    canvas.focus();
+    var r = canvas.getBoundingClientRect();
+    var px = (ev.clientX - r.left) / scale;
+    var py = (ev.clientY - r.top) / scale;
+    var cx = Math.floor(px / CW);
+    var cy = Math.floor(py / CH);
+    if (cy === 0) {
+      if (cx >= 0 && cx <= 6) setWS(1);
+      else if (cx >= 8 && cx <= 15) setWS(2);
+      else if (cx >= 17 && cx <= 23) setWS(3);
+      draw();
+      return;
+    }
+    var id = hitApp(cx, cy);
+    if (!id) return;
+    WM.focus[WM.ws] = id;
+    if (id === "repair") {
+      var a = APPS.repair;
+      var innerY = cy - a.y;
+      if (repairTargets().length) doRepair();
+      else if (innerY === 1) buyUpgrade("classify");
+      else if (innerY === 2) buyUpgrade("early");
+    }
+    draw();
+  }
+
+  /* ---------- self test ---------- */
+  function selfTest() {
+    var r = [];
+    function assert(name, cond, extra) {
+      r.push({ name: name, pass: !!cond, extra: extra == null ? "" : String(extra) });
+    }
+    resetSim(1);
+    assert("clock", S.remaining === 480);
+
+    S.mode = "HIGH";
+    var i;
+    for (i = 0; i < 80; i++) tick(0.1);
+    var clog = S.events.filter(function (e) { return e.type === "FILTER_CLOG"; })[0];
+    assert("HIGH_FILTER_CLOG", !!clog, S.events.map(function (e) { return e.type + ":" + e.phase; }).join(","));
+    assert("mining_STRESSED", sectorState("mining") === "STRESSED");
+
+    var repaired = doRepair();
+    assert("repair_clears", repaired && !S.events.some(function (e) { return e.type === "FILTER_CLOG"; }) && sectorState("mining") === "STABLE");
+
+    resetSim(1);
+    S.mode = "HIGH";
+    spawnEvent("FILTER_CLOG");
+    var ev = S.events[0];
+    var inc = ev ? ev.incident : 24;
+    for (i = 0; i < Math.ceil((inc + 0.3) * 10); i++) tick(0.1);
+    assert("ignore_FAULT", sectorState("mining") === "FAULT", sectorState("mining") + " token=" + S.token);
+    assert("token_AB", S.token >= 2, String(S.token));
+    assert("fault_blink_state", S.events.some(function (e) { return e.type === "FILTER_CLOG" && e.phase === "hold"; }));
+
+    /* hold expire steps cascade */
+    var hold = holdS();
+    for (i = 0; i < Math.ceil((hold + 0.3) * 10); i++) tick(0.1);
+    assert("cascade_C", S.token >= 3, String(S.token));
+
+    resetSim(1);
+    assert("boot_ws2", WM.ws === 2 && WM.focus[2] === "mining" && S.mode === "SAFE");
+    assert("clock_ticks", (function () {
+      tick(1);
+      return S.remaining === 479 && S.elapsed === 1;
+    })());
+
+    resetSim(1);
+    S.mode = "MAX";
+    S.heat = 80;
+    spawnEvent("HEAT_WARN");
+    assert("heat_warn_stressed", sectorState("mining") === "STRESSED");
+    setMode("SAFE");
+    assert("heat_warn_SAFE_clears", !S.events.some(function (e) { return e.type === "HEAT_WARN"; }) && sectorState("mining") === "STABLE");
+
+    resetSim(1);
+    spawnEvent("GRID_FLICKER");
+    var ginc = S.events[0].incident;
+    for (i = 0; i < Math.ceil((ginc + 0.4) * 10); i++) tick(0.1);
+    assert("flicker_no_FAULT", sectorState("power") !== "FAULT" && !S.events.some(function (e) { return e.type === "GRID_FLICKER"; }) && S.token === 0);
+
+    var failed = r.filter(function (x) { return !x.pass; });
+    return { ok: failed.length === 0, results: r };
+  }
+
+  /* ---------- dump / scenes ---------- */
+  var CP2U = {};
+  Object.keys(U2CP).forEach(function (k) { CP2U[U2CP[k]] = k; });
+  function dumpGrid() {
+    var lines = [];
+    for (var y = 0; y < ROWS; y++) {
+      var s = "";
+      for (var x = 0; x < COLS; x++) {
+        var c = chBuf[y * COLS + x];
+        s += CP2U[c] || (c >= 32 && c < 127 ? String.fromCharCode(c) : (c === 32 ? " " : "?"));
+      }
+      lines.push(s);
+    }
+    return lines.join("\n");
+  }
+
+  var frozen = false;
+  function applyScene(name) {
+    resetSim(1);
+    frozen = true;
+    anim.faultOn = true;
+    anim.flick = true;
+    if (name === "clog") {
+      S.mode = "HIGH";
+      spawnEvent("FILTER_CLOG");
+      WM.ws = 2;
+      WM.focus[2] = "mining";
+    } else if (name === "fault") {
+      S.mode = "HIGH";
+      spawnEvent("FILTER_CLOG");
+      enterFault(S.events[0]);
+      WM.ws = 2;
+      WM.focus[2] = "mining";
+    } else if (name === "repair") {
+      S.mode = "HIGH";
+      spawnEvent("FILTER_CLOG");
+      WM.ws = 2;
+      WM.focus[2] = "repair";
+    } else if (name === "power") {
+      spawnEvent("CELL_DIP");
+      S.mode = "HIGH";
+      WM.ws = 1;
+      WM.focus[1] = "power";
+    } else if (name === "radar") {
+      WM.ws = 3;
+      WM.focus[3] = "radar";
+    } else if (name === "blank") {
+      S.radarBlank = true;
+      S.token = 4;
+      WM.ws = 3;
+    } else if (name === "kill") {
+      S.ignoredRead = "filter dP high";
+      S.ended = "kill";
+    } else if (name === "win") {
+      S.credits = 142;
+      S.ended = "win";
+    } else if (name === "max") {
+      S.mode = "MAX";
+      S.heat = 78;
+      spawnEvent("HEAT_WARN");
+      WM.ws = 2;
+    } else {
+      /* boot */
+      WM.ws = 2;
+      WM.focus[2] = "mining";
+      S.mode = "SAFE";
+    }
+  }
+
+  /* ---------- loop ---------- */
+  var q = location.search || "";
+  var TEST = /(?:\?|&)test=1(?:&|$)/.test(q);
+  var sceneM = /(?:\?|&)scene=([a-z]+)/.exec(q);
+  var SCENE = sceneM ? sceneM[1] : "";
+
+  resetSim();
+  canvas.focus();
+  window.addEventListener("keydown", onKey);
+  canvas.addEventListener("mousedown", onClick);
+  canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  document.body.addEventListener("click", function () { canvas.focus(); });
+
+  if (TEST) {
+    var out = selfTest();
+    document.title = out.ok ? "OPS/OS TEST PASS" : "OPS/OS TEST FAIL";
+    applyScene("clog");
+    draw();
+    document.getElementById("testout").textContent = JSON.stringify(out, null, 2) + "\n\n" + dumpGrid();
+  } else if (SCENE) {
+    applyScene(SCENE);
+    draw();
+    document.getElementById("testout").textContent = dumpGrid();
+  }
+
+  var acc = 0;
+  var last = performance.now();
+  var shotHold = (frozen || TEST) ? 4 : -1;
+  function frame(now) {
+    var dt = Math.min(0.25, (now - last) / 1000);
+    last = now;
+    if (!frozen && !TEST) {
+      acc += dt;
+      while (acc >= 0.1) {
+        tick(0.1);
+        acc -= 0.1;
+      }
+    }
+    anim.t += dt;
+    if (!frozen) {
+      anim.faultOn = (Math.floor(anim.t * 2) % 2) === 0;
+      anim.caretOn = (Math.floor(anim.t * 1) % 2) === 0;
+      anim.flick = (Math.floor(anim.t * 5) % 2) === 0;
+    }
+    draw();
+    if (shotHold < 0) requestAnimationFrame(frame);
+    else if (shotHold-- > 0) requestAnimationFrame(frame);
+  }
+  draw();
+  requestAnimationFrame(frame);
+
+  function api() {
+    return {
+      getState: function () { return S; },
+      getWM: function () { return WM; },
+      reset: resetSim,
+      setMode: setMode,
+      spawnEvent: spawnEvent,
+      repair: doRepair,
+      tick: tick,
+      selfTest: selfTest,
+      sectorState: sectorState,
+      draw: draw,
+      dumpGrid: dumpGrid,
+      applyScene: applyScene
+    };
+  }
+  window.__OPS = api();
+})();
+</script>
+</body>
+</html>
