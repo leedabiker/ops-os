@@ -186,7 +186,7 @@ func exec(line: String) -> Array:
 func _boot() -> String:
 	return """00:00:01  boot     site online
 00:00:01  boot     workspaces 3
-00:00:02  boot     apps: term radar power mining repair
+00:00:02  boot     apps: term radar cam power mining repair
 00:00:03  boot     miner SAFE
 00:00:04  boot     radar tier 0
 00:00:05  cell-a   online  1.00

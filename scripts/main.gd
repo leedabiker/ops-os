@@ -3,6 +3,7 @@ extends Node
 const SimScript = preload("res://scripts/sim.gd")
 const GridScript = preload("res://scripts/grid.gd")
 const VfsScript = preload("res://scripts/vfs.gd")
+const CamFeedScript = preload("res://scripts/cam_feed.gd")
 
 const LOGICAL_W := 640
 const LOGICAL_H := 400
@@ -41,6 +42,8 @@ var cat_pending: Array = []
 
 var drag_id: String = ""
 var drag_off: Vector2i = Vector2i.ZERO
+var cam_feed = null
+var end_retry_y: int = 12
 
 var test_mode: bool = false
 
@@ -70,6 +73,8 @@ func _ready() -> void:
 
 	grid = GridScript.new()
 	add_child(grid)
+	cam_feed = CamFeedScript.new()
+	add_child(cam_feed)
 
 	_boot_wm()
 
@@ -91,18 +96,31 @@ func _boot_wm() -> void:
 		"power": {"id": "power", "title": "power", "ws": 1, "x": 1, "y": 1, "w": 78, "h": 7},
 		"mining": {"id": "mining", "title": "mining", "ws": 2, "x": 1, "y": 1, "w": 42, "h": 11},
 		"repair": {"id": "repair", "title": "repair", "ws": 2, "x": 44, "y": 1, "w": 34, "h": 6},
-		"radar": {"id": "radar", "title": "radar", "ws": 3, "x": 1, "y": 1, "w": 78, "h": 22},
+		"radar": {"id": "radar", "title": "radar", "ws": 3, "x": 1, "y": 1, "w": 37, "h": 22},
+		"cam": {"id": "cam", "title": "cam", "ws": 3, "x": 39, "y": 1, "w": 40, "h": 22},
 		"terminal": {"id": "terminal", "title": "terminal", "ws": 2, "x": 2, "y": 12, "w": 44, "h": 10},
 	}
 	wm = {
 		"ws": 2,
 		"focus": {1: "power", 2: "mining", 3: "radar"},
-		"open": {"power": true, "mining": true, "repair": true, "radar": true, "terminal": false},
+		"open": {"power": true, "mining": true, "repair": true, "radar": true, "cam": true, "terminal": false},
 	}
 	term_open = false
 	term_buf = ""
 	term_lines = []
 	term_last = ""
+	cat_wait = 0.0
+	cat_pending = []
+	drag_id = ""
+
+
+func _restart() -> void:
+	sim.reset()
+	vfs.reset(sim.interlock)
+	anim_t = 0.0
+	_boot_wm()
+	if cam_feed != null:
+		cam_feed.reset()
 
 
 
@@ -126,7 +144,7 @@ func _process(dt: float) -> void:
 	fault_on = int(anim_t * 2.0) % 2 == 0
 	caret_on = int(anim_t * 1.0) % 2 == 0
 	flick = int(anim_t * 5.0) % 2 == 0
-	_paint()
+	_paint(dt)
 	grid.queue_redraw()
 
 
@@ -158,11 +176,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _on_key(e: InputEventKey) -> void:
+	var k := e.keycode
 	if sim.ended != "":
+		if k == KEY_R or k == KEY_ENTER or k == KEY_KP_ENTER:
+			_restart()
+		get_viewport().set_input_as_handled()
 		return
 	var sup := _is_super(e)
 	var typing := _typing()
-	var k := e.keycode
 
 	if sup and e.shift_pressed and (k == KEY_1 or k == KEY_KP_1):
 		_move_focused(1)
@@ -206,6 +227,10 @@ func _on_key(e: InputEventKey) -> void:
 		return
 	if sup and k == KEY_S:
 		launch("radar")
+		get_viewport().set_input_as_handled()
+		return
+	if sup and k == KEY_C:
+		launch("cam")
 		get_viewport().set_input_as_handled()
 		return
 	if sup and k == KEY_Q:
@@ -326,7 +351,7 @@ func focused_app() -> String:
 
 
 func apps_on_ws(ws: int) -> Array:
-	var order := ["power", "mining", "repair", "radar", "terminal"]
+	var order := ["power", "mining", "repair", "radar", "cam", "terminal"]
 	var out: Array = []
 	for id in order:
 		if not wm.open.get(id, false):
@@ -416,9 +441,11 @@ func hit_app(cx: int, cy: int) -> String:
 
 
 func _on_click(mb: InputEventMouseButton) -> void:
-	if sim.ended != "":
-		return
 	var c := _cell_at(mb.position)
+	if sim.ended != "":
+		if c.y == end_retry_y and c.x >= 10 and c.x <= 18:
+			_restart()
+		return
 	if c.y == 0:
 		if c.x >= 0 and c.x <= 6:
 			set_ws(1)
@@ -715,17 +742,37 @@ func draw_radar(a: Dictionary, focused: bool) -> void:
 	var y: int = int(a.y)
 	var w: int = int(a.w)
 	var h: int = int(a.h)
+	var iw := w - 2
+	var ih := h - 2
 	if sim.radar_blank:
 		var msg := "NO SIGNAL"
-		var tx := x + 1 + int((w - 2 - msg.length()) / 2)
-		var ty := y + 1 + int((h - 2) / 2)
+		var tx := x + 1 + int((iw - msg.length()) / 2)
+		var ty := y + 1 + int(ih / 2)
 		grid.text(tx, ty, msg, C12)
 		return
 	var pe := power_event()
 	var hide_dust: bool = (not pe.is_empty()) and pe.type == "GRID_FLICKER" and not flick
-	if not hide_dust:
+	if not hide_dust and iw > 2 and ih > 2:
+		for i in range(16):
+			var px := int(absf(sin(float(i) * 12.9898 + anim_t * 0.11)) * 1000.0) % iw
+			var py := int(absf(cos(float(i) * 78.233 + anim_t * 0.05)) * 1000.0) % ih
+			if int(anim_t * 3.5 + float(i)) % 5 == 0:
+				continue
+			grid.put(x + 1 + px, y + 1 + py, "∙", C8)
 		for p in DUST:
+			if p.x >= iw or p.y >= ih:
+				continue
+			if int(anim_t * 2.0 + float(p.x)) % 7 == 0:
+				continue
 			grid.put(x + 1 + p.x, y + 1 + p.y, "∙", C8)
+	if sim.events.size() > 0 and iw > 4 and ih > 4:
+		var ev: Dictionary = sim.events[0]
+		var bx := 2 + absi(str(ev.type).hash()) % (iw - 4)
+		var by := 2 + absi(str(ev.read).hash()) % (ih - 4)
+		var bc: Color = C14 if ev.phase == "hold" else C6
+		if ev.phase == "hold" and not fault_on:
+			bc = C8
+		grid.put(x + 1 + bx, y + 1 + by, "■", bc)
 
 
 func draw_terminal(a: Dictionary, focused: bool) -> void:
@@ -777,8 +824,13 @@ func draw_end() -> void:
 		]
 		col = C12
 	for i in range(lines.size()):
-		var c := col
-		grid.text(10, 8 + i, str(lines[i]), c)
+		grid.text(10, 8 + i, str(lines[i]), col)
+	end_retry_y = 8 + lines.size() + 1
+	grid.text(10, end_retry_y, "r  retry", C7)
+
+
+func draw_cam(a: Dictionary, focused: bool) -> void:
+	draw_window(a, focused)
 
 
 func paint_app(id: String, focused: bool) -> void:
@@ -791,13 +843,17 @@ func paint_app(id: String, focused: bool) -> void:
 		draw_repair(a, focused)
 	elif id == "radar":
 		draw_radar(a, focused)
+	elif id == "cam":
+		draw_cam(a, focused)
 	elif id == "terminal":
 		draw_terminal(a, focused)
 
 
-func _paint() -> void:
+func _paint(dt: float = 0.016) -> void:
 	grid.clear()
 	if sim.ended != "":
+		if cam_feed != null:
+			cam_feed.hide_feed()
 		draw_end()
 		return
 	draw_chrome()
@@ -809,3 +865,9 @@ func _paint() -> void:
 		paint_app(id, false)
 	if foc != "" and wm.open.get(foc, false):
 		paint_app(foc, true)
+	if cam_feed == null:
+		return
+	if apps.has("cam") and wm.open.get("cam", false) and int(apps["cam"].ws) == int(wm.ws):
+		cam_feed.sync(apps["cam"], sim, anim_t, dt)
+	else:
+		cam_feed.hide_feed()
