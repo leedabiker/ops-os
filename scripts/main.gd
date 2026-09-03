@@ -235,26 +235,6 @@ func _on_key(e: InputEventKey) -> void:
 		_launch_terminal()
 		get_viewport().set_input_as_handled()
 		return
-	if sup and k == KEY_P:
-		launch("power")
-		get_viewport().set_input_as_handled()
-		return
-	if sup and k == KEY_M:
-		launch("mining")
-		get_viewport().set_input_as_handled()
-		return
-	if sup and k == KEY_R:
-		launch("repair")
-		get_viewport().set_input_as_handled()
-		return
-	if sup and k == KEY_S:
-		launch("radar")
-		get_viewport().set_input_as_handled()
-		return
-	if sup and k == KEY_C:
-		launch("cam")
-		get_viewport().set_input_as_handled()
-		return
 	if sup and k == KEY_Q:
 		close_focused()
 		get_viewport().set_input_as_handled()
@@ -475,28 +455,35 @@ func launch(id: String) -> void:
 	if not apps.has(id):
 		return
 	var here: int = int(wm.ws)
-	var old_ws: int = int(apps[id].ws)
 	var was_open: bool = bool(wm.open.get(id, false))
-	if was_open and old_ws != here:
-		_order_remove(old_ws, id)
+	if not was_open:
 		apps[id].ws = here
 		wm.open[id] = true
+		if id == "terminal":
+			term_open = true
 		_order_add(here, id)
-		_tile_ws(old_ws)
 		_tile_ws(here)
-	elif not was_open:
-		apps[id].ws = here
+	else:
 		wm.open[id] = true
-		_order_add(here, id)
-		_tile_ws(here)
-	wm.open[id] = true
-	if id == "terminal":
-		term_open = true
-	wm.focus[here] = id
+		if id == "terminal":
+			term_open = true
+	wm.ws = int(apps[id].ws)
+	wm.focus[int(apps[id].ws)] = id
 
 
 func _launch_terminal() -> void:
-	launch("terminal")
+	var here: int = int(wm.ws)
+	var old_ws: int = int(apps["terminal"].ws)
+	var was: bool = bool(wm.open.get("terminal", false))
+	if was and old_ws != here:
+		_order_remove(old_ws, "terminal")
+		_tile_ws(old_ws)
+	apps["terminal"].ws = here
+	wm.open["terminal"] = true
+	term_open = true
+	_order_add(here, "terminal")
+	wm.focus[here] = "terminal"
+	_tile_ws(here)
 
 
 func close_focused() -> void:
