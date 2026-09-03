@@ -10,11 +10,16 @@ config/icon="res://icon.svg"
 
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=800
+window/size/viewport_width=640
+window/size/viewport_height=400
+window/size/window_width_override=1280
+window/size/window_height_override=800
 window/size/min_width=640
 window/size/min_height=400
-window/stretch/mode="disabled"
+window/stretch/mode="viewport"
+window/stretch/aspect="keep"
+window/stretch/scale_mode="integer"
+window/dpi/allow_hidpi=false
 
 [rendering]
 

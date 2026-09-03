@@ -23,9 +23,6 @@ const DUST := [
 var sim
 var vfs
 var grid
-var vp: SubViewport
-var screen: Sprite2D
-var scale_i: int = 2
 
 var apps: Dictionary = {}
 var wm: Dictionary = {}
@@ -62,30 +59,19 @@ func _ready() -> void:
 		get_tree().quit(0 if out.ok else 1)
 		return
 
-	get_window().unresizable = false
+	var win := get_window()
+	win.unresizable = false
+	win.content_scale_size = Vector2i(LOGICAL_W, LOGICAL_H)
+	win.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+	win.content_scale_stretch = Window.CONTENT_SCALE_STRETCH_INTEGER
+	win.content_scale_factor = 1.0
 	DisplayServer.window_set_size(Vector2i(1280, 800))
-	get_window().size_changed.connect(_fit)
-
-	vp = SubViewport.new()
-	vp.disable_3d = true
-	vp.transparent_bg = false
-	vp.size = Vector2i(LOGICAL_W, LOGICAL_H)
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
-	vp.handle_input_locally = false
-	add_child(vp)
 
 	grid = GridScript.new()
-	vp.add_child(grid)
-
-	screen = Sprite2D.new()
-	screen.centered = false
-	screen.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	add_child(screen)
-	screen.texture = vp.get_texture()
+	add_child(grid)
 
 	_boot_wm()
-	_fit()
 
 	var t := Timer.new()
 	t.wait_time = 0.1
@@ -103,8 +89,8 @@ func _has_arg(name: String) -> bool:
 func _boot_wm() -> void:
 	apps = {
 		"power": {"id": "power", "title": "power", "ws": 1, "x": 1, "y": 1, "w": 78, "h": 7},
-		"mining": {"id": "mining", "title": "mining", "ws": 2, "x": 1, "y": 1, "w": 39, "h": 9},
-		"repair": {"id": "repair", "title": "repair", "ws": 2, "x": 41, "y": 1, "w": 32, "h": 6},
+		"mining": {"id": "mining", "title": "mining", "ws": 2, "x": 1, "y": 1, "w": 42, "h": 11},
+		"repair": {"id": "repair", "title": "repair", "ws": 2, "x": 44, "y": 1, "w": 34, "h": 6},
 		"radar": {"id": "radar", "title": "radar", "ws": 3, "x": 1, "y": 1, "w": 78, "h": 22},
 		"terminal": {"id": "terminal", "title": "terminal", "ws": 2, "x": 2, "y": 12, "w": 44, "h": 10},
 	}
@@ -119,17 +105,6 @@ func _boot_wm() -> void:
 	term_last = ""
 
 
-func _fit() -> void:
-	if screen == null:
-		return
-	var wsz := get_viewport().get_visible_rect().size
-	var wx := int(wsz.x)
-	var wy := int(wsz.y)
-	scale_i = maxi(1, mini(int(wx / LOGICAL_W), int(wy / LOGICAL_H)))
-	screen.scale = Vector2(scale_i, scale_i)
-	var dw := LOGICAL_W * scale_i
-	var dh := LOGICAL_H * scale_i
-	screen.position = Vector2((wx - dw) / 2.0, (wy - dh) / 2.0)
 
 
 func _on_sim_tick() -> void:
@@ -421,8 +396,7 @@ func _move_focused(n: int) -> void:
 
 
 func _cell_at(mouse: Vector2) -> Vector2i:
-	var p := mouse - screen.position
-	p /= float(scale_i)
+	var p := get_viewport().get_canvas_transform().affine_inverse() * mouse
 	return Vector2i(int(p.x / 8.0), int(p.y / 16.0))
 
 
@@ -575,9 +549,9 @@ func bar16(x: int, y: int, filln: int, fill_fg: Color) -> void:
 	grid.put(x, y, "[", C8)
 	for i in range(16):
 		if i < filln:
-			grid.put(x + 1 + i, y, "█", fill_fg)
+			grid.put(x + 1 + i, y, "▄", fill_fg)
 		else:
-			grid.put(x + 1 + i, y, " ", C0)
+			grid.put(x + 1 + i, y, " ", C8, C0)
 	grid.put(x + 17, y, "]", C8)
 
 

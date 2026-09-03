@@ -6,7 +6,7 @@ const CW := 8
 const CH := 16
 
 const CP := {
-	"█": 0xDB, "■": 0xFE, "∙": 0xF9, "░": 0xB0,
+	"█": 0xDB, "▄": 0xDC, "■": 0xFE, "∙": 0xF9, "░": 0xB0,
 	"╔": 0xC9, "╗": 0xBB, "╚": 0xC8, "╝": 0xBC, "═": 0xCD, "║": 0xBA,
 	"┌": 0xDA, "┐": 0xBF, "└": 0xC0, "┘": 0xD9, "─": 0xC4, "│": 0xB3,
 	"┬": 0xC2, "┴": 0xC1, "├": 0xC3, "┤": 0xB4, "┼": 0xC5,
@@ -21,6 +21,8 @@ var _n: int = COLS * ROWS
 
 
 func _ready() -> void:
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_DISABLED
 	ch_buf.resize(_n)
 	fg_buf.resize(_n)
 	bg_buf.resize(_n)

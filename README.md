@@ -2,9 +2,21 @@
 
 Godot 4 desktop. One 8-minute shift. Three miner modes.
 
-Open `project.godot` in Godot 4.2 or 4.3 (GL Compatibility). Press F5.
+80x25 bitmap grid, integer scaled. No TTF. Amber industrial.
 
-Integer-scaled 80x25 bitmap grid. No TTF. Amber industrial, not a themed Control UI.
+From the project (vendored Godot, same as ctrl-alt-defend):
+
+```
+./run.sh
+```
+
+or:
+
+```
+GDK_SCALE=1 ./.tools/Godot_v4.6.2-stable_linux.x86_64 --path .
+```
+
+`.tools/` is local, not in git. Copy the 4.6.2 linux binary there once.
 
 ## Play
 
