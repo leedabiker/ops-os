@@ -22,6 +22,10 @@ const DUST := [
 ]
 
 const APP_IDS := ["cam", "mining", "power", "radar", "repair", "terminal"]
+const TILE_X := 0
+const TILE_Y := 1
+const TILE_W := 80
+const TILE_H := 24
 
 var sim
 var vfs
@@ -106,7 +110,11 @@ func _boot_wm() -> void:
 		"ws": 2,
 		"focus": {1: "power", 2: "mining", 3: "radar"},
 		"open": {"power": true, "mining": true, "repair": true, "radar": true, "cam": true, "terminal": false},
+		"order": {1: ["power"], 2: ["mining", "repair"], 3: ["radar", "cam"]},
 	}
+	_tile_ws(1)
+	_tile_ws(2)
+	_tile_ws(3)
 	term_open = false
 	term_buf = ""
 	term_lines = []
@@ -392,14 +400,75 @@ func focused_app() -> String:
 
 
 func apps_on_ws(ws: int) -> Array:
-	var order := ["power", "mining", "repair", "radar", "cam", "terminal"]
+	var order: Array = wm.order[ws] if wm.order.has(ws) else []
 	var out: Array = []
 	for id in order:
 		if not wm.open.get(id, false):
 			continue
 		if int(apps[id].ws) == ws:
-			out.append(id)
+			out.append(str(id))
 	return out
+
+
+func _order_add(ws: int, id: String) -> void:
+	if not wm.order.has(ws):
+		wm.order[ws] = []
+	var order: Array = wm.order[ws]
+	if order.find(id) < 0:
+		order.append(id)
+	wm.order[ws] = order
+
+
+func _order_remove(ws: int, id: String) -> void:
+	if not wm.order.has(ws):
+		return
+	var order: Array = wm.order[ws]
+	var i := order.find(id)
+	if i >= 0:
+		order.remove_at(i)
+	wm.order[ws] = order
+
+
+func _tile_ws(ws: int) -> void:
+	if ws < 1 or ws > 3:
+		return
+	_tile_split(apps_on_ws(ws), TILE_X, TILE_Y, TILE_W, TILE_H, true)
+
+
+func _tile_split(list: Array, x: int, y: int, w: int, h: int, vertical: bool) -> void:
+	if list.is_empty() or w < 1 or h < 1:
+		return
+	if list.size() == 1:
+		var id := str(list[0])
+		if not apps.has(id):
+			return
+		apps[id].x = x
+		apps[id].y = y
+		apps[id].w = w
+		apps[id].h = h
+		return
+	var n: int = list.size()
+	var n_a: int = int(n / 2)
+	if n_a < 1:
+		n_a = 1
+	var left: Array = list.slice(0, n_a)
+	var right: Array = list.slice(n_a)
+	if vertical:
+		var lw: int = int(w / 2)
+		if lw < 1:
+			lw = 1
+		if lw >= w:
+			lw = w - 1
+		_tile_split(left, x, y, lw, h, false)
+		_tile_split(right, x + lw, y, w - lw, h, false)
+	else:
+		var th: int = int(h / 2)
+		if th < 1:
+			th = 1
+		if th >= h:
+			th = h - 1
+		_tile_split(left, x, y, w, th, true)
+		_tile_split(right, x, y + th, w, h - th, true)
 
 
 func launch(id: String) -> void:
@@ -408,20 +477,31 @@ func launch(id: String) -> void:
 	var was_open: bool = bool(wm.open.get(id, false))
 	if not was_open:
 		apps[id].ws = wm.ws
-	wm.open[id] = true
-	if id == "terminal":
-		term_open = true
+		wm.open[id] = true
+		if id == "terminal":
+			term_open = true
+		_order_add(int(wm.ws), id)
+		_tile_ws(int(wm.ws))
+	else:
+		wm.open[id] = true
+		if id == "terminal":
+			term_open = true
 	wm.ws = int(apps[id].ws)
 	wm.focus[int(apps[id].ws)] = id
 
 
 func _launch_terminal() -> void:
+	var old_ws: int = int(apps["terminal"].ws)
+	var was: bool = bool(wm.open.get("terminal", false))
+	if was and old_ws != int(wm.ws):
+		_order_remove(old_ws, "terminal")
+		_tile_ws(old_ws)
 	apps["terminal"].ws = wm.ws
-	apps["terminal"].x = 2
-	apps["terminal"].y = 12
 	wm.open["terminal"] = true
 	term_open = true
+	_order_add(int(wm.ws), "terminal")
 	wm.focus[wm.ws] = "terminal"
+	_tile_ws(int(wm.ws))
 
 
 func close_focused() -> void:
@@ -431,6 +511,8 @@ func close_focused() -> void:
 	wm.open[id] = false
 	if id == "terminal":
 		term_open = false
+	_order_remove(int(wm.ws), id)
+	_tile_ws(int(wm.ws))
 	var rest := apps_on_ws(wm.ws)
 	wm.focus[wm.ws] = rest[0] if rest.size() > 0 else ""
 
@@ -457,8 +539,13 @@ func _move_focused(n: int, follow: bool = true) -> void:
 	if id == "":
 		return
 	var old_ws := int(apps[id].ws)
-	apps[id].ws = n
-	wm.open[id] = true
+	if old_ws != n:
+		_order_remove(old_ws, id)
+		apps[id].ws = n
+		wm.open[id] = true
+		_order_add(n, id)
+		_tile_ws(old_ws)
+		_tile_ws(n)
 	if follow:
 		wm.ws = n
 		wm.focus[n] = id
@@ -515,12 +602,14 @@ func _swap_focused(k: int) -> void:
 	if other == "" or other == cur:
 		wm.focus[wm.ws] = cur
 		return
-	var ax: int = int(apps[cur].x)
-	var ay: int = int(apps[cur].y)
-	apps[cur].x = int(apps[other].x)
-	apps[cur].y = int(apps[other].y)
-	apps[other].x = ax
-	apps[other].y = ay
+	var order: Array = wm.order[wm.ws] if wm.order.has(wm.ws) else []
+	var i := order.find(cur)
+	var j := order.find(other)
+	if i >= 0 and j >= 0:
+		order[i] = other
+		order[j] = cur
+		wm.order[wm.ws] = order
+		_tile_ws(int(wm.ws))
 	wm.focus[wm.ws] = cur
 
 
@@ -580,17 +669,9 @@ func _on_click(mb: InputEventMouseButton) -> void:
 		sim.ack_at(rx, ry)
 
 
-func _on_drag(mm: InputEventMouseMotion) -> void:
-	if drag_id == "" or not apps.has(drag_id):
-		return
-	var c := _cell_at(mm.position)
-	var a: Dictionary = apps[drag_id]
-	var nx := c.x - drag_off.x
-	var ny := c.y - drag_off.y
-	nx = clampi(nx, 0, 80 - int(a.w))
-	ny = clampi(ny, 1, 25 - int(a.h))
-	a.x = nx
-	a.y = ny
+func _on_drag(_mm: InputEventMouseMotion) -> void:
+	# Tiled. Title drag does not float a window.
+	return
 
 
 func mode_color(m: String) -> Color:

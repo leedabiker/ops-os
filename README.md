@@ -20,7 +20,7 @@ GDK_SCALE=1 ./.tools/Godot_v4.6.2-stable_linux.x86_64 --path .
 
 ## Play
 
-Boot is workspace 2, mining focused, miner SAFE, clock 08:00. Workspaces are nameless desktops. Starting layout: power on 1, mining+repair on 2, radar+cam on 3. Move them.
+Boot is workspace 2, mining focused, miner SAFE, clock 08:00. Workspaces are nameless tiled desktops. Starting layout: power fills 1, mining|repair halves on 2, radar|cam halves on 3. A third window splits a half into quarters. Cam and radar draw into the tile.
 
 Win: clock out while the site is still producing. Score is credits.
 Lose: cascade reaches SITE KILL. The kill screen names the ignored event.
@@ -33,7 +33,7 @@ Lose: cascade reaches SITE KILL. The kill screen names the ignored event.
 - `Super+Shift+1/2/3` — move focused window and follow
 - `Super+Shift+Alt+1/2/3` — move focused window, stay
 - `Super+arrows` — focus window by direction
-- `Super+Shift+arrows` — swap with window in that direction
+- `Super+Shift+arrows` — swap tiles
 - `Tab` — next window on this workspace
 - `s` `h` `m` — SAFE / HIGH / MAX (anywhere except the terminal)
 - `[` `]` — step mode down / up
@@ -44,7 +44,7 @@ Lose: cascade reaches SITE KILL. The kill screen names the ignored event.
 - `apps mining` — launch or focus. Hidden opens on this desktop. Already open jumps there.
 - `Super+P` `Super+M` `Super+R` `Super+S` `Super+C` — same launches (in-game)
 - `r` / `Enter` — retry on the end screen (SITE KILL / SHIFT END)
-- Click a window to focus. Drag the title row by cells.
+- Click a window to focus. Windows do not float.
 
 HEAT_WARN does not clear on Enter. Drop to SAFE while it is still STRESSED.
 
