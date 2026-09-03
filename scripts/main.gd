@@ -492,29 +492,29 @@ func _focus_dir(k: int) -> void:
 	if cur == "" or not apps.has(cur):
 		wm.focus[wm.ws] = list[0]
 		return
-	var cx := int(apps[cur].x) + int(apps[cur].w) / 2
-	var cy := int(apps[cur].y) + int(apps[cur].h) / 2
+	var cx: int = int(apps[cur].x) + int(int(apps[cur].w) / 2)
+	var cy: int = int(apps[cur].y) + int(int(apps[cur].h) / 2)
 	var best := ""
-	var best_d := 100000
+	var best_d: int = 100000
 	for id in list:
 		if id == cur:
 			continue
-		var ax := int(apps[id].x) + int(apps[id].w) / 2
-		var ay := int(apps[id].y) + int(apps[id].h) / 2
-		var dx := ax - cx
-		var dy := ay - cy
+		var ax: int = int(apps[id].x) + int(int(apps[id].w) / 2)
+		var ay: int = int(apps[id].y) + int(int(apps[id].h) / 2)
+		var dx: int = ax - cx
+		var dy: int = ay - cy
 		var ok := false
-		if k == KEY_LEFT and dx < 0 and abs(dx) >= abs(dy):
+		if k == KEY_LEFT and dx < 0 and absi(dx) >= absi(dy):
 			ok = true
-		elif k == KEY_RIGHT and dx > 0 and abs(dx) >= abs(dy):
+		elif k == KEY_RIGHT and dx > 0 and absi(dx) >= absi(dy):
 			ok = true
-		elif k == KEY_UP and dy < 0 and abs(dy) >= abs(dx):
+		elif k == KEY_UP and dy < 0 and absi(dy) >= absi(dx):
 			ok = true
-		elif k == KEY_DOWN and dy > 0 and abs(dy) >= abs(dx):
+		elif k == KEY_DOWN and dy > 0 and absi(dy) >= absi(dx):
 			ok = true
 		if not ok:
 			continue
-		var d := abs(dx) + abs(dy)
+		var d: int = absi(dx) + absi(dy)
 		if d < best_d:
 			best_d = d
 			best = str(id)
