@@ -277,22 +277,6 @@ func _on_key(e: InputEventKey) -> void:
 		return
 
 	if not typing:
-		if k == KEY_1 or k == KEY_KP_1:
-			set_ws(1)
-			get_viewport().set_input_as_handled()
-			return
-		if k == KEY_2 or k == KEY_KP_2:
-			set_ws(2)
-			get_viewport().set_input_as_handled()
-			return
-		if k == KEY_3 or k == KEY_KP_3:
-			set_ws(3)
-			get_viewport().set_input_as_handled()
-			return
-		if k == KEY_Q:
-			close_focused()
-			get_viewport().set_input_as_handled()
-			return
 		if k == KEY_S:
 			sim.set_mode("SAFE")
 			get_viewport().set_input_as_handled()
