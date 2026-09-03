@@ -105,6 +105,14 @@ func sync(a: Dictionary, sim, anim_t: float, dt: float) -> void:
 	if power_type == "CELL_DIP":
 		flicker = minf(flicker, 0.72)
 
+	var glitch := 0.18
+	if mining_st == "STRESSED":
+		glitch = 0.42
+	elif mining_st == "FAULT":
+		glitch = 0.72
+	if fry:
+		glitch = maxf(glitch, 0.85)
+
 	var amp := 0.35
 	if mode == "HIGH":
 		amp = 0.85
@@ -126,6 +134,7 @@ func sync(a: Dictionary, sim, anim_t: float, dt: float) -> void:
 		mat.set_shader_parameter("noise_amt", noise_amt)
 		mat.set_shader_parameter("dropout", dropout)
 		mat.set_shader_parameter("flicker", flicker)
+		mat.set_shader_parameter("glitch", glitch)
 	queue_redraw()
 
 
