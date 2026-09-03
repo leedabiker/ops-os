@@ -41,7 +41,7 @@ Lose: cascade reaches SITE KILL. The kill screen names the ignored event.
 - `Super+Q` / `Super+W` — hide focused window
 - `Super+Return` — terminal on this workspace
 - `apps` / `apps list` — names (`cam` `mining` `power` `radar` `repair` `terminal`)
-- `apps mining` — launch or focus. Hidden opens on this desktop. Already open jumps there.
+- `apps mining` / Super+letter — launch or bring here. Hidden opens on this desktop. Already open elsewhere moves here.
 - `Super+P` `Super+M` `Super+R` `Super+S` `Super+C` — same launches (in-game)
 - `r` / `Enter` — retry on the end screen (SITE KILL / SHIFT END)
 - Click a window to focus. Windows do not float.

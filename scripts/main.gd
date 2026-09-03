@@ -474,34 +474,29 @@ func _tile_split(list: Array, x: int, y: int, w: int, h: int, vertical: bool) ->
 func launch(id: String) -> void:
 	if not apps.has(id):
 		return
+	var here: int = int(wm.ws)
+	var old_ws: int = int(apps[id].ws)
 	var was_open: bool = bool(wm.open.get(id, false))
-	if not was_open:
-		apps[id].ws = wm.ws
+	if was_open and old_ws != here:
+		_order_remove(old_ws, id)
+		apps[id].ws = here
 		wm.open[id] = true
-		if id == "terminal":
-			term_open = true
-		_order_add(int(wm.ws), id)
-		_tile_ws(int(wm.ws))
-	else:
+		_order_add(here, id)
+		_tile_ws(old_ws)
+		_tile_ws(here)
+	elif not was_open:
+		apps[id].ws = here
 		wm.open[id] = true
-		if id == "terminal":
-			term_open = true
-	wm.ws = int(apps[id].ws)
-	wm.focus[int(apps[id].ws)] = id
+		_order_add(here, id)
+		_tile_ws(here)
+	wm.open[id] = true
+	if id == "terminal":
+		term_open = true
+	wm.focus[here] = id
 
 
 func _launch_terminal() -> void:
-	var old_ws: int = int(apps["terminal"].ws)
-	var was: bool = bool(wm.open.get("terminal", false))
-	if was and old_ws != int(wm.ws):
-		_order_remove(old_ws, "terminal")
-		_tile_ws(old_ws)
-	apps["terminal"].ws = wm.ws
-	wm.open["terminal"] = true
-	term_open = true
-	_order_add(int(wm.ws), "terminal")
-	wm.focus[wm.ws] = "terminal"
-	_tile_ws(int(wm.ws))
+	launch("terminal")
 
 
 func close_focused() -> void:
