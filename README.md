@@ -20,7 +20,7 @@ GDK_SCALE=1 ./.tools/Godot_v4.6.2-stable_linux.x86_64 --path .
 
 ## Play
 
-Boot is workspace 2, Mining focused, miner SAFE, clock 08:00.
+Boot is workspace 2, mining focused, miner SAFE, clock 08:00. Workspaces are nameless desktops. Starting layout: power on 1, mining+repair on 2, radar+cam on 3. Move them.
 
 Win: clock out while the site is still producing. Score is credits.
 Lose: cascade reaches SITE KILL. The kill screen names the ignored event.
@@ -28,21 +28,27 @@ Lose: cascade reaches SITE KILL. The kill screen names the ignored event.
 
 ## Keys
 
-- `1` `2` `3` and `Super+1` `Super+2` `Super+3` — workspaces (Power / Mining / Security). `3` is radar+cam
-- `s` `h` `m` — SAFE / HIGH / MAX (from Mining, or anywhere except the terminal)
+- `1` `2` `3` and `Super+1` `Super+2` `Super+3` — switch workspace
+- `Super+Tab` / `Super+Shift+Tab` — next / previous workspace
+- `Super+Shift+1/2/3` — move focused window and follow
+- `Super+Shift+Alt+1/2/3` — move focused window, stay
+- `Super+arrows` — focus window by direction
+- `Super+Shift+arrows` — swap with window in that direction
+- `Tab` — next window on this workspace
+- `s` `h` `m` — SAFE / HIGH / MAX (anywhere except the terminal)
 - `[` `]` — step mode down / up
-- `Tab` / `Super+Tab` — next window on this workspace
 - `Enter` — Repair clears FILTER / BELT / JAM / CELL / FAULT (Repair focused). Radar focused: ack the selected/first contact. Click a radar `■` to ack that one.
-- `q` / `Super+Q` — hide focused window
+- `q` / `Super+Q` / `Super+W` — hide focused window
 - `Super+Return` — terminal on this workspace
-- `Super+P` `Super+M` `Super+R` `Super+S` `Super+C` — power / mining / repair / radar / cam
+- `apps` / `apps list` — names (`cam` `mining` `power` `radar` `repair` `terminal`)
+- `apps mining` — launch or focus. Hidden opens on this desktop. Already open jumps there.
+- `Super+P` `Super+M` `Super+R` `Super+S` `Super+C` — same launches (in-game)
 - `r` / `Enter` — retry on the end screen (SITE KILL / SHIFT END)
-- `Super+Shift+1/2/3` — move focused window to that workspace
 - Click a window to focus. Drag the title row by cells.
 
 HEAT_WARN does not clear on Enter. Drop to SAFE while it is still STRESSED.
 
-Radar blobs are live contacts. Unlabeled `?` until Repair `classify`; then the focused/nearest blob reads `contact` / `fence` / `intrusion`. `early` adds +6s to those Security windows only. Fence ignore is legal. Unacked intrusion is SITE KILL. Hiss is scatter, not a contact. Blank radar is `NO SIGNAL`.
+Radar blobs are live contacts. Unlabeled `?` until Repair `classify`; then the focused/nearest blob reads `contact` / `fence` / `intrusion`. `early` adds +6s to those contacts only. Fence ignore is legal. Unacked intrusion is SITE KILL. Hiss is scatter, not a contact. Blank radar is `NO SIGNAL`.
 
 Cam is read-only. It shows the rig: mode, belt, hopper, filter, heat, lamp, power. Jam, heat, and dead power are visible without the ASCII line.
 

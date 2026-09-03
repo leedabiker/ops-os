@@ -21,6 +21,8 @@ const DUST := [
 	Vector2i(22, 17), Vector2i(44, 15), Vector2i(61, 18), Vector2i(33, 10), Vector2i(70, 13),
 ]
 
+const APP_IDS := ["cam", "mining", "power", "radar", "repair", "terminal"]
+
 var sim
 var vfs
 var grid
@@ -185,16 +187,28 @@ func _on_key(e: InputEventKey) -> void:
 	var sup := _is_super(e)
 	var typing := _typing()
 
+	if sup and e.shift_pressed and e.alt_pressed and (k == KEY_1 or k == KEY_KP_1):
+		_move_focused(1, false)
+		get_viewport().set_input_as_handled()
+		return
+	if sup and e.shift_pressed and e.alt_pressed and (k == KEY_2 or k == KEY_KP_2):
+		_move_focused(2, false)
+		get_viewport().set_input_as_handled()
+		return
+	if sup and e.shift_pressed and e.alt_pressed and (k == KEY_3 or k == KEY_KP_3):
+		_move_focused(3, false)
+		get_viewport().set_input_as_handled()
+		return
 	if sup and e.shift_pressed and (k == KEY_1 or k == KEY_KP_1):
-		_move_focused(1)
+		_move_focused(1, true)
 		get_viewport().set_input_as_handled()
 		return
 	if sup and e.shift_pressed and (k == KEY_2 or k == KEY_KP_2):
-		_move_focused(2)
+		_move_focused(2, true)
 		get_viewport().set_input_as_handled()
 		return
 	if sup and e.shift_pressed and (k == KEY_3 or k == KEY_KP_3):
-		_move_focused(3)
+		_move_focused(3, true)
 		get_viewport().set_input_as_handled()
 		return
 	if sup and (k == KEY_1 or k == KEY_KP_1):
@@ -237,8 +251,28 @@ func _on_key(e: InputEventKey) -> void:
 		close_focused()
 		get_viewport().set_input_as_handled()
 		return
+	if sup and k == KEY_TAB:
+		if e.shift_pressed:
+			set_ws(wm.ws - 1 if int(wm.ws) > 1 else 3)
+		else:
+			set_ws(wm.ws + 1 if int(wm.ws) < 3 else 1)
+		get_viewport().set_input_as_handled()
+		return
 	if k == KEY_TAB:
 		focus_next(e.shift_pressed)
+		get_viewport().set_input_as_handled()
+		return
+	if sup and k == KEY_W:
+		close_focused()
+		get_viewport().set_input_as_handled()
+		return
+	if sup and (k == KEY_LEFT or k == KEY_RIGHT or k == KEY_UP or k == KEY_DOWN):
+		if e.shift_pressed and e.alt_pressed:
+			pass
+		elif e.shift_pressed:
+			_swap_focused(k)
+		else:
+			_focus_dir(k)
 		get_viewport().set_input_as_handled()
 		return
 
@@ -334,6 +368,9 @@ func _term_commit() -> void:
 	term_last = line
 	var parts := line.strip_edges().split(" ", false)
 	var cmd: String = parts[0] if parts.size() > 0 else ""
+	if cmd == "apps":
+		_apps_cmd(parts)
+		return
 	if cmd == "cat":
 		var out: Array = vfs.exec(line)
 		cat_pending = out
@@ -342,6 +379,21 @@ func _term_commit() -> void:
 	var out2: Array = vfs.exec(line)
 	for ln in out2:
 		_term_print(str(ln))
+
+
+
+func _apps_cmd(parts: Array) -> void:
+	var sub := ""
+	if parts.size() >= 2:
+		sub = str(parts[1])
+	if sub == "" or sub == "list":
+		for id in APP_IDS:
+			_term_print(id)
+		return
+	if apps.has(sub):
+		launch(sub)
+		return
+	_term_print("?")
 
 
 func set_ws(n: int) -> void:
@@ -369,12 +421,13 @@ func apps_on_ws(ws: int) -> Array:
 func launch(id: String) -> void:
 	if not apps.has(id):
 		return
+	var was_open: bool = bool(wm.open.get(id, false))
+	if not was_open:
+		apps[id].ws = wm.ws
 	wm.open[id] = true
 	if id == "terminal":
-		apps[id].ws = wm.ws
 		term_open = true
-	else:
-		wm.ws = int(apps[id].ws)
+	wm.ws = int(apps[id].ws)
 	wm.focus[int(apps[id].ws)] = id
 
 
@@ -415,14 +468,76 @@ func focus_next(back: bool = false) -> void:
 	wm.focus[wm.ws] = list[i]
 
 
-func _move_focused(n: int) -> void:
+func _move_focused(n: int, follow: bool = true) -> void:
 	var id := focused_app()
 	if id == "":
 		return
+	var old_ws := int(apps[id].ws)
 	apps[id].ws = n
 	wm.open[id] = true
-	wm.ws = n
-	wm.focus[n] = id
+	if follow:
+		wm.ws = n
+		wm.focus[n] = id
+	else:
+		var rest := apps_on_ws(old_ws)
+		wm.focus[old_ws] = rest[0] if rest.size() > 0 else ""
+		wm.focus[n] = id
+
+
+func _focus_dir(k: int) -> void:
+	var list := apps_on_ws(wm.ws)
+	if list.is_empty():
+		return
+	var cur := focused_app()
+	if cur == "" or not apps.has(cur):
+		wm.focus[wm.ws] = list[0]
+		return
+	var cx := int(apps[cur].x) + int(apps[cur].w) / 2
+	var cy := int(apps[cur].y) + int(apps[cur].h) / 2
+	var best := ""
+	var best_d := 100000
+	for id in list:
+		if id == cur:
+			continue
+		var ax := int(apps[id].x) + int(apps[id].w) / 2
+		var ay := int(apps[id].y) + int(apps[id].h) / 2
+		var dx := ax - cx
+		var dy := ay - cy
+		var ok := false
+		if k == KEY_LEFT and dx < 0 and abs(dx) >= abs(dy):
+			ok = true
+		elif k == KEY_RIGHT and dx > 0 and abs(dx) >= abs(dy):
+			ok = true
+		elif k == KEY_UP and dy < 0 and abs(dy) >= abs(dx):
+			ok = true
+		elif k == KEY_DOWN and dy > 0 and abs(dy) >= abs(dx):
+			ok = true
+		if not ok:
+			continue
+		var d := abs(dx) + abs(dy)
+		if d < best_d:
+			best_d = d
+			best = str(id)
+	if best != "":
+		wm.focus[wm.ws] = best
+
+
+func _swap_focused(k: int) -> void:
+	var cur := focused_app()
+	if cur == "":
+		return
+	_focus_dir(k)
+	var other := focused_app()
+	if other == "" or other == cur:
+		wm.focus[wm.ws] = cur
+		return
+	var ax: int = int(apps[cur].x)
+	var ay: int = int(apps[cur].y)
+	apps[cur].x = int(apps[other].x)
+	apps[cur].y = int(apps[other].y)
+	apps[other].x = ax
+	apps[other].y = ay
+	wm.focus[wm.ws] = cur
 
 
 func _cell_at(mouse: Vector2) -> Vector2i:
@@ -452,11 +567,11 @@ func _on_click(mb: InputEventMouseButton) -> void:
 			_restart()
 		return
 	if c.y == 0:
-		if c.x >= 0 and c.x <= 6:
+		if c.x >= 1 and c.x <= 4:
 			set_ws(1)
-		elif c.x >= 8 and c.x <= 15:
+		elif c.x >= 6 and c.x <= 9:
 			set_ws(2)
-		elif c.x >= 17 and c.x <= 23:
+		elif c.x >= 11 and c.x <= 14:
 			set_ws(3)
 		return
 	var id := hit_app(c.x, c.y)
@@ -593,9 +708,9 @@ func bar16(x: int, y: int, filln: int, fill_fg: Color) -> void:
 
 func draw_chrome() -> void:
 	grid.fill(0, 0, 80, 1, " ", C0, C0)
-	_tab(0, " 1 PWR ", 1)
-	_tab(8, " 2 MINE ", 2)
-	_tab(17, " 3 SEC ", 3)
+	_tab(1, " 1 ", 1)
+	_tab(6, " 2 ", 2)
+	_tab(11, " 3 ", 3)
 	var mode: String = sim.mode
 	var mode_pad: String = (mode + "    ").substr(0, 4)
 	grid.text(36, 0, mode_pad, mode_color(mode))
