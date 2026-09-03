@@ -32,7 +32,7 @@ Lose: cascade reaches SITE KILL. The kill screen names the ignored event.
 - `s` `h` `m` — SAFE / HIGH / MAX (from Mining, or anywhere except the terminal)
 - `[` `]` — step mode down / up
 - `Tab` / `Super+Tab` — next window on this workspace
-- `Enter` — Repair clears FILTER / BELT / JAM / CELL / FAULT (Repair focused)
+- `Enter` — Repair clears FILTER / BELT / JAM / CELL / FAULT (Repair focused). Radar focused: ack the selected/first contact. Click a radar `■` to ack that one.
 - `q` / `Super+Q` — hide focused window
 - `Super+Return` — terminal on this workspace
 - `Super+P` `Super+M` `Super+R` `Super+S` `Super+C` — power / mining / repair / radar / cam
@@ -41,6 +41,10 @@ Lose: cascade reaches SITE KILL. The kill screen names the ignored event.
 - Click a window to focus. Drag the title row by cells.
 
 HEAT_WARN does not clear on Enter. Drop to SAFE while it is still STRESSED.
+
+Radar blobs are live contacts. Unlabeled `?` until Repair `classify`; then the focused/nearest blob reads `contact` / `fence` / `intrusion`. `early` adds +6s to those Security windows only. Fence ignore is legal. Unacked intrusion is SITE KILL. Hiss is scatter, not a contact. Blank radar is `NO SIGNAL`.
+
+Cam is read-only. It shows the rig: mode, belt, hopper, filter, heat, lamp, power. Jam, heat, and dead power are visible without the ASCII line.
 
 ## Modes
 
@@ -63,7 +67,5 @@ Previous canvas playtest lives in `playtest/index.html`. Open that file in a bro
 
 ## Stubbed
 
-- Radar contacts / ack / INTRUSION (blank `NO SIGNAL` is live; floor dust and one dim contact when a clock is open)
 - GREP_CODE incident (terminal `pwd ls cd cat grep` works; Repair lock field is not wired)
-- `classify` / `early` spend materials or print `denied`; they do not change radar yet
 - PUMP_STALL / BREAKER_TRIP as random spawns (brownout still arrives through the cascade)

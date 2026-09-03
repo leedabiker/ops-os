@@ -64,6 +64,13 @@ func sync(a: Dictionary, sim, anim_t: float, dt: float) -> void:
 	var blank: bool = bool(sim.radar_blank)
 	var heat: float = float(sim.heat)
 	var mode: String = str(sim.mode)
+	var mining_type := ""
+	var power_type := ""
+	for e in sim.events:
+		if e.sector == "mining" and mining_type == "":
+			mining_type = str(e.type)
+		if e.sector == "power" and power_type == "":
+			power_type = str(e.type)
 
 	var fry := blank or power_st == "FAULT"
 	if fry:
@@ -91,13 +98,10 @@ func sync(a: Dictionary, sim, anim_t: float, dt: float) -> void:
 	flicker = 1.0
 	if mining_st == "FAULT" or heat >= 80.0:
 		flicker = 0.52 if int(anim_t * 9.0) % 3 == 0 else 1.0
-	var pe: Dictionary = {}
-	for e in sim.events:
-		if e.sector == "power":
-			pe = e
-			break
-	if not pe.is_empty() and pe.type == "GRID_FLICKER":
+	if power_type == "GRID_FLICKER":
 		flicker = 0.32 if int(anim_t * 6.0) % 2 == 0 else 0.9
+	if power_type == "CELL_DIP":
+		flicker = minf(flicker, 0.72)
 
 	var amp := 0.35
 	if mode == "HIGH":
@@ -113,7 +117,7 @@ func sync(a: Dictionary, sim, anim_t: float, dt: float) -> void:
 		acc += dt
 		if acc >= 0.07:
 			acc = 0.0
-			_render_scene(mode, mining_st)
+			_render_scene(mode, mining_st, mining_type, power_type, heat)
 			tex.update(img)
 
 	if mat:
@@ -162,7 +166,7 @@ func _line(x0: int, y0: int, x1: int, y1: int, c: Color) -> void:
 			y += sy
 
 
-func _render_scene(mode: String, mining_st: String) -> void:
+func _render_scene(mode: String, mining_st: String, mining_type: String, power_type: String, heat: float) -> void:
 	var sky := Color(0.015, 0.02, 0.018, 1)
 	img.fill(sky)
 	var bob := int(round(sin(t * 1.35) * (1.2 if mode != "SAFE" else 0.4)))
@@ -187,51 +191,118 @@ func _render_scene(mode: String, mining_st: String) -> void:
 		var c := Color(0.075, 0.082, 0.06, 1).lerp(Color(0.12, 0.13, 0.09, 1), u)
 		img.fill_rect(Rect2i(0, y, FW, 1), c)
 
-	# strata on the far face
 	for i in range(7):
 		var sy := rim + 5 + i * 5
 		for x in range(18, 58):
 			_blend(x, sy, Color(0.02, 0.02, 0.018, 1), 0.28)
 
-	# boom lamp + cone
+	var lamp_a := 0.10
+	if mode == "HIGH":
+		lamp_a = 0.17
+	elif mode == "MAX":
+		lamp_a = 0.26
+	if mining_type == "HEAT_WARN" or heat >= 80.0:
+		lamp_a += 0.07
+	if power_type == "CELL_DIP":
+		lamp_a *= 0.32
+	if mining_st == "FAULT":
+		lamp_a *= 0.28 if int(t * 9.0) % 3 == 0 else 1.0
 	var lx := 54
 	var ly := 21 + bob
 	for y in range(ly, mini(FH, floor_y + 10)):
 		var u := float(y - ly) / 42.0
 		var half := int(2.0 + u * 15.0)
-		var a := 0.16 * (1.0 - clampf(u, 0.0, 1.0) * 0.55)
+		var a := lamp_a * (1.0 - clampf(u, 0.0, 1.0) * 0.55)
 		for x in range(lx - half, lx + half + 1):
 			_blend(x, y, Color(0.42, 0.46, 0.24, 1), a)
-	_px(lx, ly, Color(0.95, 0.96, 0.72, 1))
-	_px(lx + 1, ly, Color(0.72, 0.74, 0.4, 1))
-	_blend(lx, ly + 1, Color(0.8, 0.82, 0.4, 1), 0.85)
+	var lamp_c := Color(0.95, 0.96, 0.72, 1)
+	if power_type == "CELL_DIP":
+		lamp_c = Color(0.28, 0.30, 0.18, 1)
+	_px(lx, ly, lamp_c)
+	_px(lx + 1, ly, lamp_c.darkened(0.25))
+	_blend(lx, ly + 1, lamp_c, 0.85)
 
-	# cabin / body (cam is bolted here — large in the near field)
+	# cabin / body
+	var body := Color(0.15, 0.16, 0.13, 1)
+	if mining_type == "HEAT_WARN":
+		body = Color(0.42, 0.16, 0.07, 1)
+	elif heat >= 70.0:
+		body = body.lerp(Color(0.32, 0.14, 0.08, 1), clampf((heat - 70.0) / 30.0, 0.0, 1.0))
 	for y in range(48, 72):
-		img.fill_rect(Rect2i(6, y, 24, 1), Color(0.15, 0.16, 0.13, 1))
-	img.fill_rect(Rect2i(8, 44, 18, 8), Color(0.11, 0.12, 0.1, 1))
+		img.fill_rect(Rect2i(6, y, 24, 1), body)
+	img.fill_rect(Rect2i(8, 44, 18, 8), body.darkened(0.2))
 	for y in range(26, 50):
 		_px(17, y, Color(0.2, 0.21, 0.16, 1))
 		_px(18, y, Color(0.18, 0.19, 0.14, 1))
 	for y in range(62, FH):
 		var w := 22 + (y - 62)
-		img.fill_rect(Rect2i(0, y, mini(FW, w), 1), Color(0.13, 0.14, 0.11, 1))
+		img.fill_rect(Rect2i(0, y, mini(FW, w), 1), body.darkened(0.12))
 
-	# boom
 	_line(19, 30, lx - 1, ly + 1, Color(0.22, 0.23, 0.16, 1))
 	_line(19, 31, lx - 1, ly + 2, Color(0.17, 0.18, 0.13, 1))
 	img.fill_rect(Rect2i(lx - 2, ly + 1, 5, 5), Color(0.2, 0.21, 0.15, 1))
 
-	# tracks
 	for x in range(4, 38):
 		_px(x, 70, Color(0.07, 0.07, 0.06, 1))
 		_px(x, 72, Color(0.07, 0.07, 0.06, 1))
 
-	# dust in the lamp
+	# filter / intake on the cabin
+	img.fill_rect(Rect2i(8, 36, 11, 10), Color(0.12, 0.13, 0.10, 1))
+	img.fill_rect(Rect2i(10, 38, 7, 6), Color(0.07, 0.07, 0.06, 1))
+	_px(13, 37, Color(0.22, 0.23, 0.16, 1))
+	_px(14, 37, Color(0.22, 0.23, 0.16, 1))
+
+	# hopper / feed over the belt
+	img.fill_rect(Rect2i(22, 50, 12, 4), Color(0.18, 0.19, 0.14, 1))
+	_line(22, 54, 26, 62, Color(0.16, 0.17, 0.12, 1))
+	_line(33, 54, 34, 62, Color(0.16, 0.17, 0.12, 1))
+	img.fill_rect(Rect2i(26, 54, 8, 8), Color(0.11, 0.12, 0.09, 1))
+
+	# belt
+	var belt_y := 63
+	var bx0 := 26
+	var bx1 := 72
+	var period := 5
+	var jammed := mining_type == "JAM_SAFE"
+	var slip := mining_type == "BELT_SLIP"
+	var speed := 0.0
+	if mode == "SAFE":
+		speed = 0.55
+	elif mode == "HIGH":
+		speed = 5.2
+	elif mode == "MAX":
+		speed = 8.4
+	if jammed:
+		speed = 0.0
+	elif slip:
+		speed = 1.8 if int(t * 7.0) % 5 == 0 else 0.0
+	var off := int(floor(t * speed)) % period
+	if speed <= 0.01:
+		off = 0
+	for x in range(bx0, bx1):
+		var u := posmod(x - bx0 + off, period)
+		var slat := Color(0.22, 0.23, 0.16, 1) if u < 3 else Color(0.06, 0.07, 0.05, 1)
+		_px(x, belt_y, slat)
+		_px(x, belt_y + 1, slat)
+		_px(x, belt_y + 2, Color(0.05, 0.05, 0.04, 1))
+	if speed > 0.4 and not jammed:
+		for i in range(6):
+			var mx := bx0 + int(fmod(t * speed * 3.2 + float(i) * 9.0, float(bx1 - bx0)))
+			_px(mx, belt_y - 1, Color(0.32, 0.30, 0.18, 1))
+			_px(mx + 1, belt_y - 1, Color(0.24, 0.22, 0.14, 1))
+	if jammed:
+		img.fill_rect(Rect2i(27, 56, 7, 6), Color(0.38, 0.32, 0.16, 1))
+		img.fill_rect(Rect2i(28, 57, 5, 4), Color(0.48, 0.40, 0.18, 1))
+		_px(30, 59, Color(0.55, 0.46, 0.22, 1))
+
 	var tick := int(t * 11.0)
-	var n := 16 if mode == "SAFE" else 22
+	var n := 8 if mode == "SAFE" else 20
+	if mode == "MAX":
+		n = 30
 	if mining_st == "FAULT":
-		n = 28
+		n = 36
+	if mining_type == "FILTER_CLOG":
+		n += 10
 	for i in range(n):
 		var h1 := _hash(i * 31 + tick / 2)
 		var h2 := _hash(i * 17 + 9)
@@ -241,20 +312,40 @@ func _render_scene(mode: String, mining_st: String) -> void:
 		if _hash(i + tick) > 0.7:
 			_px(dx + 1, dy, Color(0.32, 0.34, 0.22, 1))
 
-	# fog band
-	var fy := 16 + int(fmod(t * 5.5, 36.0))
-	for y in range(fy, fy + 4):
-		for x in range(FW):
-			_blend(x, y, Color(0.22, 0.24, 0.17, 1), 0.07)
+	if mining_type == "FILTER_CLOG":
+		for i in range(18):
+			var h1 := _hash(i * 19 + tick)
+			var fx := 11 + int(h1 * 8.0)
+			var fy := 36 - int(fmod(t * (8.0 + h1 * 6.0) + float(i) * 1.7, 18.0))
+			_px(fx, fy, Color(0.62, 0.64, 0.40, 1))
+			if _hash(i + 3 + tick) > 0.45:
+				_px(fx + 1, fy + 1, Color(0.40, 0.42, 0.26, 1))
 
-	# dirty lens
+	var haze_n := 1 if mode == "MAX" else 0
+	if mining_type == "HEAT_WARN":
+		haze_n = 3
+	elif heat >= 80.0:
+		haze_n = maxi(haze_n, 2)
+	for k in range(haze_n):
+		var fy := 14 + int(fmod(t * (4.0 + float(k)) + float(k) * 11.0, 40.0))
+		for y in range(fy, fy + 5):
+			for x in range(FW):
+				_blend(x, y, Color(0.34, 0.28, 0.14, 1), 0.10 if mining_type == "HEAT_WARN" else 0.07)
+
+	if mining_type == "HEAT_WARN":
+		for y in range(46, 72):
+			for x in range(6, 32):
+				_blend(x, y, Color(0.70, 0.28, 0.08, 1), 0.22)
+
+	if haze_n > 0:
+		_warp_haze(haze_n)
+
 	for s in lens:
 		var p: Vector2i = s
 		_blend(p.x, p.y, Color(0, 0, 0, 1), 0.5)
 		_blend(p.x + 1, p.y, Color(0, 0, 0, 1), 0.28)
 		_blend(p.x, p.y + 1, Color(0, 0, 0, 1), 0.22)
 
-	# rolling snow bar
 	var bar := int(fmod(t * 26.0, float(FH + 12))) - 3
 	if bar >= 0 and bar < FH:
 		for x in range(FW):
@@ -262,6 +353,20 @@ func _render_scene(mode: String, mining_st: String) -> void:
 			_px(x, bar, Color(ns, ns, ns * 0.85, 1))
 			if bar + 1 < FH:
 				_blend(x, bar + 1, Color(ns, ns, ns, 1), 0.35)
+
+
+func _warp_haze(amt: int) -> void:
+	var mag := 1 if amt < 3 else 2
+	for y in range(18, 72):
+		var sh := int(round(sin(t * 7.2 + float(y) * 0.38) * float(mag)))
+		if sh == 0:
+			continue
+		var row: Array = []
+		for x in range(FW):
+			row.append(img.get_pixel(x, y))
+		for x in range(FW):
+			var sx := clampi(x - sh, 0, FW - 1)
+			img.set_pixel(x, y, row[sx])
 
 
 func _draw() -> void:

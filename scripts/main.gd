@@ -292,6 +292,11 @@ func _on_key(e: InputEventKey) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
+	if (k == KEY_ENTER or k == KEY_KP_ENTER) and focused_app() == "radar":
+		sim.ack_first()
+		get_viewport().set_input_as_handled()
+		return
+
 	if typing:
 		_term_key(e)
 		get_viewport().set_input_as_handled()
@@ -470,6 +475,10 @@ func _on_click(mb: InputEventMouseButton) -> void:
 			sim.buy_upgrade("classify")
 		elif inner_y == 2:
 			sim.buy_upgrade("early")
+	if id == "radar" and c.y > int(a.y):
+		var rx := c.x - int(a.x) - 1
+		var ry := c.y - int(a.y) - 1
+		sim.ack_at(rx, ry)
 
 
 func _on_drag(mm: InputEventMouseMotion) -> void:
@@ -744,6 +753,7 @@ func draw_radar(a: Dictionary, focused: bool) -> void:
 	var h: int = int(a.h)
 	var iw := w - 2
 	var ih := h - 2
+	var field_h := maxi(1, ih - 1)
 	if sim.radar_blank:
 		var msg := "NO SIGNAL"
 		var tx := x + 1 + int((iw - msg.length()) / 2)
@@ -752,27 +762,49 @@ func draw_radar(a: Dictionary, focused: bool) -> void:
 		return
 	var pe := power_event()
 	var hide_dust: bool = (not pe.is_empty()) and pe.type == "GRID_FLICKER" and not flick
-	if not hide_dust and iw > 2 and ih > 2:
+	if not hide_dust and iw > 2 and field_h > 2:
 		for i in range(16):
 			var px := int(absf(sin(float(i) * 12.9898 + anim_t * 0.11)) * 1000.0) % iw
-			var py := int(absf(cos(float(i) * 78.233 + anim_t * 0.05)) * 1000.0) % ih
+			var py := int(absf(cos(float(i) * 78.233 + anim_t * 0.05)) * 1000.0) % field_h
 			if int(anim_t * 3.5 + float(i)) % 5 == 0:
 				continue
 			grid.put(x + 1 + px, y + 1 + py, "∙", C8)
 		for p in DUST:
-			if p.x >= iw or p.y >= ih:
+			if p.x >= iw or p.y >= field_h:
 				continue
 			if int(anim_t * 2.0 + float(p.x)) % 7 == 0:
 				continue
 			grid.put(x + 1 + p.x, y + 1 + p.y, "∙", C8)
-	if sim.events.size() > 0 and iw > 4 and ih > 4:
-		var ev: Dictionary = sim.events[0]
-		var bx := 2 + absi(str(ev.type).hash()) % (iw - 4)
-		var by := 2 + absi(str(ev.read).hash()) % (ih - 4)
-		var bc: Color = C14 if ev.phase == "hold" else C6
-		if ev.phase == "hold" and not fault_on:
-			bc = C8
-		grid.put(x + 1 + bx, y + 1 + by, "■", bc)
+	var hiss_frame := 0 if flick else 1
+	for e in sim.events:
+		if e.type != "COMMS_HISS":
+			continue
+		var n: int = int(e.hiss_n) if e.has("hiss_n") else 6
+		var seed: int = int(e.hiss_seed) if e.has("hiss_seed") else 1
+		n = clampi(n, 4, 8)
+		for i in range(n):
+			var hv := (seed * 1103515245 + 12345 + i * 9973 + hiss_frame * 7919) & 0x7fffffff
+			var hx := hv % maxi(1, iw)
+			var hy := int(hv / maxi(1, iw)) % maxi(1, field_h)
+			grid.put(x + 1 + hx, y + 1 + hy, "░", C8)
+	var nearest: Dictionary = {}
+	var nearest_d := 1000000
+	var cx := int(iw / 2)
+	var cy := int(field_h / 2)
+	for e in sim.events:
+		if not sim.is_radar_contact(e):
+			continue
+		var bx := clampi(int(e.x), 0, maxi(0, iw - 1))
+		var by := clampi(int(e.y), 0, maxi(0, field_h - 1))
+		grid.put(x + 1 + bx, y + 1 + by, "■", C7)
+		var d := absi(bx - cx) + absi(by - cy)
+		if nearest.is_empty() or d < nearest_d:
+			nearest = e
+			nearest_d = d
+	if not nearest.is_empty():
+		var lab: String = sim.security_label(nearest)
+		if lab != "":
+			grid.text(x + 2, y + h - 2, lab, C7)
 
 
 func draw_terminal(a: Dictionary, focused: bool) -> void:

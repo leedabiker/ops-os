@@ -4,6 +4,9 @@ const SHIFT := 480.0
 const B1 := 150.0
 const B2 := 330.0
 
+const RADAR_IW := 35
+const RADAR_IH := 19
+
 const ET := {
 	"FILTER_CLOG": {"sector": "mining", "read": "filter dP high", "verb": "repair", "need": "HIGH+", "inc": [24, 16, 10], "hold": [12, 9, 6]},
 	"BELT_SLIP": {"sector": "mining", "read": "belt slip", "verb": "repair", "need": "HIGH+", "inc": [16, 12, 8], "hold": [12, 9, 6]},
@@ -12,6 +15,10 @@ const ET := {
 	"CELL_DIP": {"sector": "power", "read": "cell output low", "verb": "mode_or_repair", "need": "ANY", "inc": [20, 14, 10], "hold": [12, 9, 6]},
 	"GRID_FLICKER": {"sector": "power", "read": "grid unstable", "verb": "expire", "need": "ANY", "inc": [10, 8, 6], "hold": [0, 0, 0]},
 	"BROWNOUT": {"sector": "power", "read": "breaker open", "verb": "repair", "need": "NONE", "inc": [0, 0, 0], "hold": [12, 9, 6]},
+	"CONTACT_UNID": {"sector": "security", "read": "?", "verb": "ack", "need": "ANY", "inc": [14, 10, 7], "hold": [0, 0, 0]},
+	"FENCE_GLITCH": {"sector": "security", "read": "?", "verb": "ack", "need": "ANY", "inc": [14, 10, 7], "hold": [0, 0, 0]},
+	"INTRUSION": {"sector": "security", "read": "?", "verb": "ack", "need": "ANY", "inc": [12, 9, 6], "hold": [0, 0, 0]},
+	"COMMS_HISS": {"sector": "security", "read": "", "verb": "expire", "need": "ANY", "inc": [8, 6, 5], "hold": [0, 0, 0]},
 }
 
 var rng: int = 1
@@ -39,6 +46,7 @@ var denied_on: String = ""
 var cascade_arm: float = 0.0
 var interlock: String = "7K-441"
 var grep_locked: bool = false
+var hiss_cd: float = 8.0
 
 
 func _rand() -> float:
@@ -129,6 +137,8 @@ func sector_state(sec: String) -> String:
 	for e in events:
 		if e.sector != sec:
 			continue
+		if e.type == "COMMS_HISS":
+			continue
 		any_event = true
 		if e.phase == "hold":
 			return "FAULT"
@@ -140,13 +150,89 @@ func sector_state(sec: String) -> String:
 
 
 func live_clocks() -> int:
-	return events.size()
+	var n := 0
+	for e in events:
+		if e.type == "COMMS_HISS":
+			continue
+		n += 1
+	return n
+
+
+func is_radar_contact(e: Dictionary) -> bool:
+	if e.is_empty():
+		return false
+	var t: String = str(e.type)
+	return t == "CONTACT_UNID" or t == "FENCE_GLITCH" or t == "INTRUSION"
+
+
+func radar_contacts() -> Array:
+	var list: Array = []
+	for e in events:
+		if is_radar_contact(e):
+			list.append(e)
+	return list
+
+
+func security_label(e: Dictionary) -> String:
+	if e.is_empty() or str(e.type) == "COMMS_HISS":
+		return ""
+	if not classify:
+		return "?"
+	if e.type == "CONTACT_UNID":
+		return "contact"
+	if e.type == "FENCE_GLITCH":
+		return "fence"
+	if e.type == "INTRUSION":
+		return "intrusion"
+	return "?"
+
+
+func _security_contact_busy() -> bool:
+	for e in events:
+		if e.sector == "security" and e.type != "COMMS_HISS":
+			return true
+	return false
+
+
+func ack_event(e: Dictionary) -> bool:
+	if ended != "":
+		return false
+	if not is_radar_contact(e):
+		return false
+	clear_event(e)
+	return true
+
+
+func ack_first() -> bool:
+	var list := radar_contacts()
+	if list.is_empty():
+		return false
+	return ack_event(list[0])
+
+
+func ack_at(px: int, py: int) -> bool:
+	for e in radar_contacts():
+		if int(e.x) == px and int(e.y) == py:
+			return ack_event(e)
+	return false
+
+
+func _place_security(e: Dictionary) -> void:
+	if e.sector != "security":
+		return
+	e["x"] = 2 + _rand_int(maxi(1, RADAR_IW - 4))
+	e["y"] = 2 + _rand_int(maxi(1, RADAR_IH - 4))
+	if e.type == "COMMS_HISS":
+		e["hiss_n"] = 4 + _rand_int(5)
+		e["hiss_seed"] = rng
 
 
 func make_event(type: String) -> Dictionary:
 	var d: Dictionary = ET[type]
 	var b := band()
 	var inc: float = float(d.inc[b])
+	if early and d.sector == "security" and type != "COMMS_HISS":
+		inc += 6.0
 	var hold: float = float(d.hold[b])
 	var e := {
 		"type": type,
@@ -157,6 +243,8 @@ func make_event(type: String) -> Dictionary:
 		"incident": inc,
 		"hold": hold,
 		"t": hold if inc <= 0.0 else inc,
+		"x": 0,
+		"y": 0,
 	}
 	return e
 
@@ -169,13 +257,23 @@ func spawn_event(type: String) -> Dictionary:
 	var d: Dictionary = ET[type]
 	if type != "BROWNOUT":
 		for e in events:
-			if e.sector == d.sector:
-				return {}
+			if e.sector != d.sector:
+				continue
+			if d.sector == "security":
+				if type == "COMMS_HISS" or e.type == "COMMS_HISS":
+					continue
+			return {}
 	var ev := make_event(type)
+	_place_security(ev)
+	if type == "INTRUSION" and radar_blank:
+		ignored_read = "intrusion"
+		token = 6
+		ended = "kill"
 	if ev.phase == "hold":
 		enter_fault(ev)
 	events.append(ev)
-	spawn_cd = cooldown()
+	if type != "COMMS_HISS":
+		spawn_cd = cooldown()
 	if type == "FILTER_CLOG":
 		last_clog = elapsed
 	if type == "GRID_FLICKER":
@@ -331,6 +429,13 @@ func buy_upgrade(which: String) -> bool:
 func maybe_spawn(dt: float) -> void:
 	if ended != "":
 		return
+	hiss_cd -= dt
+	if elapsed >= 8.0 and hiss_cd <= 0.0 and _find_type("COMMS_HISS").is_empty():
+		var hs := spawn_event("COMMS_HISS")
+		if not hs.is_empty():
+			hiss_cd = 12.0 + _rand() * 10.0
+		else:
+			hiss_cd = 4.0
 	spawn_cd -= dt
 	var mining_busy := _has_sector("mining")
 	if (mode == "HIGH" or mode == "MAX") and not mining_busy:
@@ -367,6 +472,12 @@ func maybe_spawn(dt: float) -> void:
 		if flicker_band != band():
 			for i in range(2):
 				cands.append("GRID_FLICKER")
+	if not _security_contact_busy():
+		if band() >= 1:
+			cands.append("CONTACT_UNID")
+			cands.append("FENCE_GLITCH")
+		if band() >= 2:
+			cands.append("INTRUSION")
 	if cands.is_empty():
 		spawn_cd = 4.0
 		return
@@ -376,10 +487,18 @@ func maybe_spawn(dt: float) -> void:
 func tick_events(dt: float) -> void:
 	var snap: Array = events.duplicate()
 	for e in snap:
+		if e.type == "INTRUSION" and radar_blank:
+			e.t = 0.0
 		e.t -= dt
 		if e.t > 0.0:
 			continue
-		if e.verb == "expire" or e.type == "GRID_FLICKER":
+		if e.type == "INTRUSION":
+			if ignored_read == "":
+				ignored_read = "intrusion"
+			token = 6
+			ended = "kill"
+			return
+		if e.verb == "expire" or e.type == "GRID_FLICKER" or e.type == "CONTACT_UNID" or e.type == "FENCE_GLITCH" or e.type == "COMMS_HISS":
 			var kept: Array = []
 			for x in events:
 				if x != e:
@@ -489,6 +608,7 @@ func reset(seed: int = 0) -> void:
 	cascade_arm = 0.0
 	interlock = _make_token()
 	grep_locked = false
+	hiss_cd = 8.0
 
 
 func self_test() -> Dictionary:
@@ -591,6 +711,116 @@ func self_test() -> Dictionary:
 	spawn_event("CELL_DIP")
 	ok = demand() > supply()
 	r.append({"name": "MAX_CELL_DIP_brownout_ready", "pass": ok, "extra": "dem=%s sup=%s" % [demand(), supply()]})
+
+	reset(1)
+	var cu := spawn_event("CONTACT_UNID")
+	ok = not cu.is_empty() and cu.has("x") and cu.has("y") and sector_state("security") == "STRESSED"
+	r.append({"name": "contact_blob", "pass": ok, "extra": str(cu)})
+	var cinc := float(cu.incident)
+	ok = absf(cinc - 14.0) < 0.01
+	r.append({"name": "contact_inc_b1", "pass": ok, "extra": str(cinc)})
+	for i in range(int(ceil((cinc + 0.3) * 10.0))):
+		tick(0.1)
+	ok = ended == "" and token == 0 and _find_type("CONTACT_UNID").is_empty() and sector_state("security") == "STABLE"
+	r.append({"name": "contact_expire_tax", "pass": ok, "extra": "ended=%s token=%s" % [ended, token]})
+
+	reset(1)
+	var fg := spawn_event("FENCE_GLITCH")
+	ok = not fg.is_empty() and absf(float(fg.incident) - 14.0) < 0.01
+	r.append({"name": "fence_same_timer", "pass": ok, "extra": str(fg.incident) if not fg.is_empty() else "empty"})
+	reset(1)
+	spawn_event("CONTACT_UNID")
+	spawn_event("FENCE_GLITCH")
+	ok = radar_contacts().size() == 1
+	r.append({"name": "one_security_contact", "pass": ok, "extra": str(radar_contacts().size())})
+
+	reset(1)
+	spawn_event("FENCE_GLITCH")
+	ok = ack_first() and _find_type("FENCE_GLITCH").is_empty() and token == 0 and ended == ""
+	r.append({"name": "fence_ack_clears", "pass": ok})
+
+	reset(1)
+	var ce := spawn_event("CONTACT_UNID")
+	ok = ack_at(int(ce.x), int(ce.y)) and _find_type("CONTACT_UNID").is_empty()
+	r.append({"name": "contact_ack_at", "pass": ok})
+
+	reset(1)
+	early = true
+	var ce2 := spawn_event("CONTACT_UNID")
+	ok = absf(float(ce2.incident) - 20.0) < 0.01
+	r.append({"name": "early_contact_plus6", "pass": ok, "extra": str(ce2.incident)})
+	var fe2 := spawn_event("FENCE_GLITCH")
+	ok = fe2.is_empty()
+	r.append({"name": "early_no_second_contact", "pass": ok})
+	reset(1)
+	early = true
+	var ie := spawn_event("INTRUSION")
+	ok = absf(float(ie.incident) - 18.0) < 0.01
+	r.append({"name": "early_intrusion_plus6", "pass": ok, "extra": str(ie.incident)})
+	reset(1)
+	early = true
+	var hs := spawn_event("COMMS_HISS")
+	ok = absf(float(hs.incident) - 8.0) < 0.01
+	r.append({"name": "early_hiss_no_plus6", "pass": ok, "extra": str(hs.incident)})
+
+	reset(1)
+	classify = true
+	var cl := spawn_event("CONTACT_UNID")
+	ok = security_label(cl) == "contact"
+	r.append({"name": "classify_contact_label", "pass": ok, "extra": security_label(cl)})
+	reset(1)
+	var raw := spawn_event("INTRUSION")
+	ok = security_label(raw) == "?"
+	r.append({"name": "unclassified_question", "pass": ok})
+	classify = true
+	ok = security_label(raw) == "intrusion"
+	r.append({"name": "classify_live_relabel", "pass": ok, "extra": security_label(raw)})
+
+	reset(1)
+	spawn_event("INTRUSION")
+	var iinc: float = float(events[0].incident)
+	for i in range(int(ceil((iinc + 0.3) * 10.0))):
+		tick(0.1)
+	ok = ended == "kill" and ignored_read == "intrusion" and token >= 6
+	r.append({"name": "intrusion_expire_kill", "pass": ok, "extra": "ended=%s ign=%s token=%s" % [ended, ignored_read, token]})
+
+	reset(1)
+	radar_blank = true
+	spawn_event("INTRUSION")
+	ok = ended == "kill" and ignored_read == "intrusion"
+	r.append({"name": "intrusion_blank_kill", "pass": ok, "extra": "ended=%s" % ended})
+
+	reset(1)
+	spawn_event("COMMS_HISS")
+	hiss_cd = 999.0
+	ok = sector_state("security") == "STABLE" and live_clocks() == 0
+	r.append({"name": "hiss_not_clock", "pass": ok})
+	var hinc: float = float(events[0].incident)
+	for i in range(int(ceil((hinc + 0.3) * 10.0))):
+		tick(0.1)
+	ok = ended == "" and token == 0 and _find_type("COMMS_HISS").is_empty()
+	r.append({"name": "hiss_fade_no_kill", "pass": ok})
+
+	reset(1)
+	spawn_event("CONTACT_UNID")
+	spawn_event("COMMS_HISS")
+	ok = radar_contacts().size() == 1 and not _find_type("COMMS_HISS").is_empty()
+	r.append({"name": "hiss_with_contact", "pass": ok})
+	ack_first()
+	ok = radar_contacts().is_empty() and not _find_type("COMMS_HISS").is_empty() and token == 0
+	r.append({"name": "ack_skips_hiss", "pass": ok})
+
+	reset(1)
+	elapsed = 160.0
+	mode = "HIGH"
+	spawn_event("FILTER_CLOG")
+	ok = live_clocks() == 1
+	var before_sec := _security_contact_busy()
+	# band 1, cap 1 — security must not spawn over mining
+	spawn_cd = 0.0
+	maybe_spawn(0.1)
+	ok = not _find_type("FILTER_CLOG").is_empty() and live_clocks() == 1
+	r.append({"name": "security_no_drown_mining", "pass": ok, "extra": str(events)})
 
 	var failed: Array = []
 	for x in r:
