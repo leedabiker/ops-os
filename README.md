@@ -18,6 +18,17 @@ GDK_SCALE=1 ./.tools/Godot_v4.6.2-stable_linux.x86_64 --path .
 
 `.tools/` is local, not in git. Copy the 4.6.2 linux binary there once.
 
+
+## Audio lab
+
+Temporary synth dial room for the diegetic bed (no shift UI):
+
+```
+./run.sh -- --audio-lab
+```
+
+Sliders write live dials. SAFE / HIGH / MAX load presets; Save writes the active slot. Event toggles and Fire thud / Fire alarm exercise one-shots. **print bake** dumps the mode tables + thud/alarm params to the panel and stdout so you can paste them back into `scripts/audio.gd`.
+
 ## Play
 
 Boot is workspace 2, mining focused, miner SAFE, clock 08:00. Workspaces are nameless tiled desktops. Starting layout: power fills 1, mining|repair halves on 2, radar|cam halves on 3. A third window splits a half into quarters. Cam and radar draw into the tile.

@@ -8,4 +8,4 @@ if [ ! -x "$GODOT" ]; then
   echo "missing $GODOT — copy Godot 4.6.2 linux x86_64 into .tools/" >&2
   exit 1
 fi
-exec "$GODOT" --path .
+exec "$GODOT" --path . "$@"

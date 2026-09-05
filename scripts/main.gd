@@ -5,6 +5,7 @@ const GridScript = preload("res://scripts/grid.gd")
 const VfsScript = preload("res://scripts/vfs.gd")
 const CamFeedScript = preload("res://scripts/cam_feed.gd")
 const AudioScript = preload("res://scripts/audio.gd")
+const AudioLabScript = preload("res://scripts/audio_lab.gd")
 
 const LOGICAL_W := 640
 const LOGICAL_H := 400
@@ -54,6 +55,7 @@ var audio = null
 var end_retry_y: int = 12
 
 var test_mode: bool = false
+var audio_lab_mode: bool = false
 
 
 func _ready() -> void:
@@ -68,6 +70,21 @@ func _ready() -> void:
 		print("OPS/OS TEST ", "PASS" if out.ok else "FAIL")
 		print(JSON.stringify(out))
 		get_tree().quit(0 if out.ok else 1)
+		return
+
+	audio_lab_mode = _has_arg("--audio-lab")
+	if audio_lab_mode:
+		var lab_win := get_window()
+		lab_win.title = "OPS/OS audio lab"
+		lab_win.unresizable = false
+		lab_win.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+		DisplayServer.window_set_size(Vector2i(1280, 800))
+		audio = AudioScript.new()
+		add_child(audio)
+		audio.reset()
+		var lab = AudioLabScript.new()
+		add_child(lab)
+		lab.setup(audio)
 		return
 
 	var win := get_window()
@@ -145,7 +162,7 @@ func _restart() -> void:
 
 
 func _on_sim_tick() -> void:
-	if test_mode:
+	if test_mode or audio_lab_mode:
 		return
 	if cat_wait > 0.0:
 		cat_wait = maxf(0.0, cat_wait - 0.1)
@@ -159,7 +176,7 @@ func _on_sim_tick() -> void:
 
 
 func _process(dt: float) -> void:
-	if test_mode or grid == null:
+	if test_mode or audio_lab_mode or grid == null:
 		return
 	anim_t += dt
 	fault_on = int(anim_t * 2.0) % 2 == 0
@@ -178,7 +195,7 @@ func _typing() -> bool:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if test_mode:
+	if test_mode or audio_lab_mode:
 		return
 	if event is InputEventKey:
 		var e := event as InputEventKey
