@@ -4,6 +4,7 @@ const SimScript = preload("res://scripts/sim.gd")
 const GridScript = preload("res://scripts/grid.gd")
 const VfsScript = preload("res://scripts/vfs.gd")
 const CamFeedScript = preload("res://scripts/cam_feed.gd")
+const AudioScript = preload("res://scripts/audio.gd")
 
 const LOGICAL_W := 640
 const LOGICAL_H := 400
@@ -49,6 +50,7 @@ var cat_pending: Array = []
 var drag_id: String = ""
 var drag_off: Vector2i = Vector2i.ZERO
 var cam_feed = null
+var audio = null
 var end_retry_y: int = 12
 
 var test_mode: bool = false
@@ -81,6 +83,10 @@ func _ready() -> void:
 	add_child(grid)
 	cam_feed = CamFeedScript.new()
 	add_child(cam_feed)
+	audio = AudioScript.new()
+	add_child(audio)
+	audio.reset()
+	audio.sync(sim)
 
 	_boot_wm()
 
@@ -131,6 +137,9 @@ func _restart() -> void:
 	_boot_wm()
 	if cam_feed != null:
 		cam_feed.reset()
+	if audio != null:
+		audio.reset()
+		audio.sync(sim)
 
 
 
@@ -145,6 +154,8 @@ func _on_sim_tick() -> void:
 				_term_print(ln)
 			cat_pending = []
 	sim.tick(0.1)
+	if audio != null:
+		audio.sync(sim)
 
 
 func _process(dt: float) -> void:
