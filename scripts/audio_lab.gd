@@ -75,7 +75,11 @@ func _build_ui() -> void:
 	col.add_child(_section("Dials"))
 	var dial_specs := [
 		["master", "master / bed gain", 0.0, 2.0, 0.01],
+		["drone_hz", "drone Hz", 30.0, 100.0, 0.5],
+		["drone_amp", "drone amp", 0.0, 0.4, 0.001],
+		["sub_amp", "sub amp", 0.0, 0.2, 0.001],
 		["noise_amp", "noise amp", 0.0, 0.2, 0.001],
+		["noise_lp", "noise LP Hz (cutoff)", 100.0, 8000.0, 10.0],
 		["pulse_amp", "pulse amp", 0.0, 0.4, 0.001],
 		["pulse_hz", "pulse Hz", 0.1, 8.0, 0.01],
 		["pulse_duty", "pulse duty", 0.02, 0.8, 0.01],
@@ -219,7 +223,7 @@ func _make_slider_row(key: String, label: String, mn: float, mx: float, step: fl
 
 	var lab := Label.new()
 	lab.text = label
-	lab.custom_minimum_size = Vector2(140, 0)
+	lab.custom_minimum_size = Vector2(170, 0)
 	_style_label(lab, C6, 13)
 	box.add_child(lab)
 

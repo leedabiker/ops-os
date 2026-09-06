@@ -8,8 +8,11 @@ var playback: AudioStreamGeneratorPlayback
 
 var t: float = 0.0
 var pulse_phase: float = 0.0
+var drone_phase: float = 0.0
+var sub_phase: float = 0.0
 var lfo_phase: float = 0.0
 var noise_state: int = 1
+var lp_z: float = 0.0
 
 var mode: String = "SAFE"
 var heat: float = 22.0
@@ -39,9 +42,14 @@ var kill_cut: bool = false
 var stutter_gate: float = 1.0
 var stutter_phase: float = 0.0
 
+# noise_lp: one-pole lowpass cutoff in Hz on the noise/hiss path (air around the drone).
 var modes := {
 	"SAFE": {
-		"noise_amp": 0.018,
+		"noise_amp": 0.008,
+		"noise_lp": 1000.0,
+		"drone_hz": 48.0,
+		"drone_amp": 0.045,
+		"sub_amp": 0.022,
 		"pulse_amp": 0.035,
 		"pulse_hz": 0.85,
 		"pulse_duty": 0.18,
@@ -52,7 +60,11 @@ var modes := {
 		"master": 1.0,
 	},
 	"HIGH": {
-		"noise_amp": 0.045,
+		"noise_amp": 0.018,
+		"noise_lp": 1000.0,
+		"drone_hz": 55.0,
+		"drone_amp": 0.09,
+		"sub_amp": 0.04,
 		"pulse_amp": 0.11,
 		"pulse_hz": 2.2,
 		"pulse_duty": 0.18,
@@ -63,7 +75,11 @@ var modes := {
 		"master": 1.0,
 	},
 	"MAX": {
-		"noise_amp": 0.08,
+		"noise_amp": 0.03,
+		"noise_lp": 1200.0,
+		"drone_hz": 70.0,
+		"drone_amp": 0.13,
+		"sub_amp": 0.06,
 		"pulse_amp": 0.16,
 		"pulse_hz": 3.6,
 		"pulse_duty": 0.18,
@@ -80,7 +96,11 @@ var alarm := {"hz": 880.0, "hz2": 660.0, "rate": 0.28, "on": 0.14, "amp": 0.22}
 
 ## Live voice params — what `_sample` reads every frame.
 var live := {
-	"noise_amp": 0.045,
+	"noise_amp": 0.018,
+	"noise_lp": 1000.0,
+	"drone_hz": 55.0,
+	"drone_amp": 0.09,
+	"sub_amp": 0.04,
 	"pulse_amp": 0.11,
 	"pulse_hz": 2.2,
 	"pulse_duty": 0.18,
@@ -107,8 +127,11 @@ func _ready() -> void:
 func reset() -> void:
 	t = 0.0
 	pulse_phase = 0.0
+	drone_phase = 0.0
+	sub_phase = 0.0
 	lfo_phase = 0.0
 	noise_state = 1
+	lp_z = 0.0
 	mode = "SAFE"
 	heat = 22.0
 	bed_alive = true
@@ -219,11 +242,26 @@ func fire_alarm() -> void:
 
 func print_bake() -> String:
 	var lines: PackedStringArray = PackedStringArray()
+	lines.append("# noise_lp: one-pole lowpass cutoff in Hz on the noise/hiss path.")
 	lines.append("var modes := {")
 	for m in ["SAFE", "HIGH", "MAX"]:
 		var row: Dictionary = modes[m]
 		lines.append("\t\"%s\": {" % m)
-		var keys := ["noise_amp", "pulse_amp", "pulse_hz", "pulse_duty", "pitch", "lfo_hz", "lfo_depth", "grit", "master"]
+		var keys := [
+			"noise_amp",
+			"noise_lp",
+			"drone_hz",
+			"drone_amp",
+			"sub_amp",
+			"pulse_amp",
+			"pulse_hz",
+			"pulse_duty",
+			"pitch",
+			"lfo_hz",
+			"lfo_depth",
+			"grit",
+			"master",
+		]
 		for i in keys.size():
 			var k: String = keys[i]
 			var comma := "," if i < keys.size() - 1 else ""
@@ -370,6 +408,10 @@ func _sample(dt: float) -> float:
 
 	var pulse_hz := float(live.pulse_hz)
 	var noise_amp := float(live.noise_amp)
+	var noise_lp := float(live.noise_lp)
+	var drone_hz := float(live.drone_hz)
+	var drone_amp := float(live.drone_amp)
+	var sub_amp := float(live.sub_amp)
 	var pulse_amp := float(live.pulse_amp)
 	var pulse_duty := float(live.pulse_duty)
 	var grit := float(live.grit)
@@ -406,14 +448,25 @@ func _sample(dt: float) -> float:
 		pulse = sin((pulse_phase / pulse_duty) * PI)
 	pulse *= pulse_amp * stutter_gate
 
-	var n := _noise()
-	var hiss := n * noise_amp
-	if filter_clog:
-		hiss += absf(n) * n * 0.09
-	if grit > 0.0:
-		hiss += n * grit * (0.5 + 0.5 * sin(t * 47.0 * pitch))
+	var tone_hz := maxf(drone_hz * pitch, 1.0)
+	drone_phase = fmod(drone_phase + tone_hz * dt, 1.0)
+	sub_phase = fmod(sub_phase + tone_hz * 0.5 * dt, 1.0)
+	# Continuous low saw at audio rate; pitch dial scales drone_hz.
+	var drone := (2.0 * drone_phase - 1.0) * drone_amp
+	var sub := sin(sub_phase * TAU) * sub_amp
 
-	var bed := (hiss + pulse) * lfo * bed_gain * master
+	var n := _noise()
+	var noise_in := n * noise_amp
+	if filter_clog:
+		noise_in += absf(n) * n * 0.09
+	if grit > 0.0:
+		noise_in += n * grit * (0.5 + 0.5 * sin(t * 47.0 * pitch))
+	# One-pole LP: noise_lp is cutoff in Hz; air around the drone, not the body.
+	var lp_coeff := 1.0 - exp(-TAU * maxf(noise_lp, 1.0) / MIX_RATE)
+	lp_z += lp_coeff * (noise_in - lp_z)
+	var hiss := lp_z
+
+	var bed := (hiss + pulse + drone + sub) * lfo * bed_gain * master
 	out += bed
 
 	if thud_t >= 0.0:
