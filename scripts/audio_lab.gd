@@ -316,7 +316,7 @@ func _on_save() -> void:
 	status_label.text = "saved dials into %s" % m
 
 
-func _on_event(ev: String, on: bool) -> void:
+func _on_event(on: bool, ev: String) -> void:
 	audio.set_event(ev, on)
 	status_label.text = "event %s = %s" % [ev, str(on)]
 
