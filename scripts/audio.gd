@@ -3,16 +3,27 @@ extends Node
 const MIX_RATE := 22050.0
 const BUF_LEN := 0.1
 
+# Preload godot-sfxr so class_name / generator work headless without the editor plugin.
+const _SfxrGlobals = preload("res://addons/godot_sfxr/SfxrGlobals.gd")
+const _SfxrInterface = preload("res://addons/godot_sfxr/SfxrStreamPlayerInterface.gd")
+const _SfxrGenerator = preload("res://addons/godot_sfxr/SfxrGenerator.gd")
+const _SfxrStreamPlayer = preload("res://addons/godot_sfxr/SfxrStreamPlayer.gd")
+
 var player: AudioStreamPlayer
 var playback: AudioStreamGeneratorPlayback
+var oneshot_player: AudioStreamPlayer
 
 var t: float = 0.0
 var pulse_phase: float = 0.0
 var drone_phase: float = 0.0
 var sub_phase: float = 0.0
 var lfo_phase: float = 0.0
+var vib_phase: float = 0.0
 var noise_state: int = 1
 var lp_z: float = 0.0
+var noise_hp_z: float = 0.0
+var drone_lp_z: float = 0.0
+var drone_bp_z: float = 0.0
 
 var mode: String = "SAFE"
 var heat: float = 22.0
@@ -35,20 +46,30 @@ var saw_jam: bool = false
 var saw_intrusion: bool = false
 var saw_kill: bool = false
 
-var thud_t: float = -1.0
-var alarm_t: float = -1.0
 var kill_cut: bool = false
 
 var stutter_gate: float = 1.0
 var stutter_phase: float = 0.0
 
-# noise_lp: one-pole lowpass cutoff in Hz on the noise/hiss path (air around the drone).
+# Bed dials (units documented in print_bake / lab labels):
+#   noise_lp / noise_hpf: Hz — noise path band (HPF then LPF)
+#   drone_wave: 0=saw, 1=square (sfxr-style)
+#   drone_duty: square duty 0..1 (ignored for saw)
+#   drone_lpf: Hz cutoff on drone(+sub) resonant LPF (sfxr fltw style)
+#   drone_lpf_res: 0..1 resonance/damping (sfxr fltdmp style)
+#   vib_hz: Hz — vibrato rate on drone pitch
+#   vib_depth: 0..1 fractional pitch wobble
 var modes := {
 	"SAFE": {
 		"noise_amp": 0.008,
 		"noise_lp": 1000.0,
+		"noise_hpf": 120.0,
 		"drone_hz": 48.0,
 		"drone_amp": 0.045,
+		"drone_wave": 0.0,
+		"drone_duty": 0.45,
+		"drone_lpf": 520.0,
+		"drone_lpf_res": 0.22,
 		"sub_amp": 0.022,
 		"pulse_amp": 0.035,
 		"pulse_hz": 0.85,
@@ -56,14 +77,21 @@ var modes := {
 		"pitch": 0.82,
 		"lfo_hz": 0.035,
 		"lfo_depth": 0.25,
+		"vib_hz": 0.18,
+		"vib_depth": 0.035,
 		"grit": 0.0,
 		"master": 1.0,
 	},
 	"HIGH": {
 		"noise_amp": 0.018,
 		"noise_lp": 1000.0,
+		"noise_hpf": 140.0,
 		"drone_hz": 55.0,
 		"drone_amp": 0.09,
+		"drone_wave": 0.0,
+		"drone_duty": 0.4,
+		"drone_lpf": 600.0,
+		"drone_lpf_res": 0.28,
 		"sub_amp": 0.04,
 		"pulse_amp": 0.11,
 		"pulse_hz": 2.2,
@@ -71,14 +99,21 @@ var modes := {
 		"pitch": 1.0,
 		"lfo_hz": 0.07,
 		"lfo_depth": 0.25,
+		"vib_hz": 0.22,
+		"vib_depth": 0.04,
 		"grit": 0.0,
 		"master": 1.0,
 	},
 	"MAX": {
 		"noise_amp": 0.03,
 		"noise_lp": 1200.0,
+		"noise_hpf": 160.0,
 		"drone_hz": 70.0,
 		"drone_amp": 0.13,
+		"drone_wave": 1.0,
+		"drone_duty": 0.35,
+		"drone_lpf": 720.0,
+		"drone_lpf_res": 0.35,
 		"sub_amp": 0.06,
 		"pulse_amp": 0.16,
 		"pulse_hz": 3.6,
@@ -86,20 +121,64 @@ var modes := {
 		"pitch": 1.18,
 		"lfo_hz": 0.12,
 		"lfo_depth": 0.25,
+		"vib_hz": 0.35,
+		"vib_depth": 0.055,
 		"grit": 0.07,
 		"master": 1.0,
 	},
 }
 
-var thud := {"freq": 48.0, "decay": 14.0, "noise": 0.12, "amp": 0.85}
-var alarm := {"hz": 880.0, "hz2": 660.0, "rate": 0.28, "on": 0.14, "amp": 0.22}
+# One-shot sfxr config: preset name + seed + optional param overrides.
+# Presets map to SfxrGlobals.PRESETS (HIT / BLIP / EXPLOSION).
+var oneshots := {
+	"thud": {
+		"preset": "HIT",
+		"seed": 42,
+		"sound_vol": 0.42,
+		"p_base_freq": 0.11,
+		"p_freq_ramp": -0.42,
+		"p_env_sustain": 0.08,
+		"p_env_decay": 0.28,
+		"p_env_punch": 0.45,
+		"wave_type": 3,
+	},
+	"alarm": {
+		"preset": "BLIP",
+		"seed": 7,
+		"sound_vol": 0.32,
+		"p_base_freq": 0.58,
+		"p_env_sustain": 0.14,
+		"p_env_decay": 0.55,
+		"p_repeat_speed": 0.42,
+		"p_hpf_freq": 0.12,
+		"wave_type": 0,
+		"p_duty": 0.28,
+	},
+	"kill": {
+		"preset": "EXPLOSION",
+		"seed": 99,
+		"sound_vol": 0.48,
+		"p_base_freq": 0.09,
+		"p_freq_ramp": -0.38,
+		"p_env_sustain": 0.22,
+		"p_env_decay": 0.45,
+		"p_env_punch": 0.65,
+		"p_hpf_freq": 0.08,
+		"wave_type": 3,
+	},
+}
 
 ## Live voice params — what `_sample` reads every frame.
 var live := {
 	"noise_amp": 0.018,
 	"noise_lp": 1000.0,
+	"noise_hpf": 140.0,
 	"drone_hz": 55.0,
 	"drone_amp": 0.09,
+	"drone_wave": 0.0,
+	"drone_duty": 0.4,
+	"drone_lpf": 600.0,
+	"drone_lpf_res": 0.28,
 	"sub_amp": 0.04,
 	"pulse_amp": 0.11,
 	"pulse_hz": 2.2,
@@ -107,6 +186,8 @@ var live := {
 	"pitch": 1.0,
 	"lfo_hz": 0.07,
 	"lfo_depth": 0.25,
+	"vib_hz": 0.22,
+	"vib_depth": 0.04,
 	"grit": 0.0,
 	"master": 1.0,
 }
@@ -123,6 +204,10 @@ func _ready() -> void:
 	player.play()
 	playback = player.get_stream_playback() as AudioStreamGeneratorPlayback
 
+	oneshot_player = AudioStreamPlayer.new()
+	oneshot_player.bus = "Master"
+	add_child(oneshot_player)
+
 
 func reset() -> void:
 	t = 0.0
@@ -130,8 +215,12 @@ func reset() -> void:
 	drone_phase = 0.0
 	sub_phase = 0.0
 	lfo_phase = 0.0
+	vib_phase = 0.0
 	noise_state = 1
 	lp_z = 0.0
+	noise_hp_z = 0.0
+	drone_lp_z = 0.0
+	drone_bp_z = 0.0
 	mode = "SAFE"
 	heat = 22.0
 	bed_alive = true
@@ -150,12 +239,12 @@ func reset() -> void:
 	saw_jam = false
 	saw_intrusion = false
 	saw_kill = false
-	thud_t = -1.0
-	alarm_t = -1.0
 	kill_cut = false
 	stutter_gate = 1.0
 	stutter_phase = 0.0
 	load_mode_into_dials("SAFE")
+	if oneshot_player != null and oneshot_player.playing:
+		oneshot_player.stop()
 	if player != null and not player.playing:
 		player.play()
 		playback = player.get_stream_playback() as AudioStreamGeneratorPlayback
@@ -233,16 +322,87 @@ func set_event(name: String, on: bool) -> void:
 
 
 func fire_thud() -> void:
-	thud_t = 0.0
+	_play_oneshot("thud")
 
 
 func fire_alarm() -> void:
-	alarm_t = 0.0
+	_play_oneshot("alarm")
+
+
+func fire_kill() -> void:
+	_play_oneshot("kill")
+
+
+func _preset_enum(name: String) -> int:
+	# SfxrGlobals.PRESETS: NONE=0 … HIT=5 … BLIP=8 … EXPLOSION=3 … MUTATE=12
+	match name.to_upper():
+		"PICKUP":
+			return 1
+		"LASER":
+			return 2
+		"EXPLOSION":
+			return 3
+		"POWERUP":
+			return 4
+		"HIT":
+			return 5
+		"JUMP":
+			return 6
+		"CLICK":
+			return 7
+		"BLIP":
+			return 8
+		"SYNTH":
+			return 9
+		"RANDOM":
+			return 10
+		"TONE":
+			return 11
+		"MUTATE":
+			return 12
+		_:
+			return 5
+
+
+func _build_oneshot_wav(kind: String) -> AudioStreamWAV:
+	var cfg: Dictionary = oneshots.get(kind, {})
+	var bag = _SfxrStreamPlayer.new()
+	# Ensure interface defaults / globals resolve via preloads.
+	var _g = _SfxrGlobals
+	var _i = _SfxrInterface
+	seed(int(cfg.get("seed", 1)))
+	bag.preset_values(_preset_enum(str(cfg.get("preset", "HIT"))))
+	for k in cfg.keys():
+		if k == "preset" or k == "seed":
+			continue
+		bag.set(k, cfg[k])
+	var gen = _SfxrGenerator.new()
+	var wav: AudioStreamWAV = gen.build_sample(bag)
+	if wav != null:
+		wav.format = AudioStreamWAV.FORMAT_8_BITS
+	bag.free()
+	return wav
+
+
+func _play_oneshot(kind: String) -> void:
+	if oneshot_player == null:
+		return
+	var wav := _build_oneshot_wav(kind)
+	if wav == null:
+		return
+	if oneshot_player.playing:
+		oneshot_player.stop()
+	oneshot_player.stream = wav
+	oneshot_player.play()
 
 
 func print_bake() -> String:
 	var lines: PackedStringArray = PackedStringArray()
-	lines.append("# noise_lp: one-pole lowpass cutoff in Hz on the noise/hiss path.")
+	lines.append("# Bed dial units:")
+	lines.append("#   noise_lp / noise_hpf: Hz on noise path (HPF then LPF).")
+	lines.append("#   drone_wave: 0=saw, 1=square; drone_duty: square duty 0..1.")
+	lines.append("#   drone_lpf: Hz resonant LPF on drone(+sub); drone_lpf_res: 0..1 damping.")
+	lines.append("#   vib_hz: Hz vibrato rate; vib_depth: 0..1 pitch wobble (sfxr vib).")
 	lines.append("var modes := {")
 	for m in ["SAFE", "HIGH", "MAX"]:
 		var row: Dictionary = modes[m]
@@ -250,8 +410,13 @@ func print_bake() -> String:
 		var keys := [
 			"noise_amp",
 			"noise_lp",
+			"noise_hpf",
 			"drone_hz",
 			"drone_amp",
+			"drone_wave",
+			"drone_duty",
+			"drone_lpf",
+			"drone_lpf_res",
 			"sub_amp",
 			"pulse_amp",
 			"pulse_hz",
@@ -259,6 +424,8 @@ func print_bake() -> String:
 			"pitch",
 			"lfo_hz",
 			"lfo_depth",
+			"vib_hz",
+			"vib_depth",
 			"grit",
 			"master",
 		]
@@ -270,20 +437,10 @@ func print_bake() -> String:
 		lines.append("\t}%s" % trail)
 	lines.append("}")
 	lines.append("")
-	lines.append(
-		"var thud := {\"freq\": %s, \"decay\": %s, \"noise\": %s, \"amp\": %s}"
-		% [_fmt_num(float(thud.freq)), _fmt_num(float(thud.decay)), _fmt_num(float(thud.noise)), _fmt_num(float(thud.amp))]
-	)
-	lines.append(
-		"var alarm := {\"hz\": %s, \"hz2\": %s, \"rate\": %s, \"on\": %s, \"amp\": %s}"
-		% [
-			_fmt_num(float(alarm.hz)),
-			_fmt_num(float(alarm.hz2)),
-			_fmt_num(float(alarm.rate)),
-			_fmt_num(float(alarm.on)),
-			_fmt_num(float(alarm.amp)),
-		]
-	)
+	lines.append("# One-shots via vendored godot-sfxr (HIT / BLIP / EXPLOSION).")
+	for kind in ["thud", "alarm", "kill"]:
+		var cfg: Dictionary = oneshots[kind]
+		lines.append("oneshots[\"%s\"] preset=%s seed=%s" % [kind, str(cfg.get("preset", "")), str(cfg.get("seed", 0))])
 	var text := "\n".join(lines)
 	print(text)
 	return text
@@ -345,13 +502,13 @@ func sync(sim) -> void:
 
 	if jam_safe and not saw_jam:
 		saw_jam = true
-		thud_t = 0.0
+		fire_thud()
 	elif not jam_safe:
 		saw_jam = false
 
 	if intrusion and not saw_intrusion:
 		saw_intrusion = true
-		alarm_t = 0.0
+		fire_alarm()
 	elif not intrusion:
 		saw_intrusion = false
 
@@ -359,6 +516,7 @@ func sync(sim) -> void:
 		saw_kill = true
 		kill_cut = true
 		bed_gain = 0.0
+		fire_kill()
 	elif ended != "kill":
 		saw_kill = false
 		kill_cut = false
@@ -372,15 +530,6 @@ func _process(dt: float) -> void:
 			playback = player.get_stream_playback() as AudioStreamGeneratorPlayback
 		if playback == null:
 			return
-
-	if thud_t >= 0.0:
-		thud_t += dt
-		if thud_t > 0.35:
-			thud_t = -1.0
-	if alarm_t >= 0.0:
-		alarm_t += dt
-		if alarm_t > 1.8:
-			alarm_t = -1.0
 
 	if kill_cut:
 		bed_gain = 0.0
@@ -409,8 +558,13 @@ func _sample(dt: float) -> float:
 	var pulse_hz := float(live.pulse_hz)
 	var noise_amp := float(live.noise_amp)
 	var noise_lp := float(live.noise_lp)
+	var noise_hpf := float(live.noise_hpf)
 	var drone_hz := float(live.drone_hz)
 	var drone_amp := float(live.drone_amp)
+	var drone_wave := float(live.drone_wave)
+	var drone_duty := float(live.drone_duty)
+	var drone_lpf := float(live.drone_lpf)
+	var drone_lpf_res := float(live.drone_lpf_res)
 	var sub_amp := float(live.sub_amp)
 	var pulse_amp := float(live.pulse_amp)
 	var pulse_duty := float(live.pulse_duty)
@@ -418,6 +572,8 @@ func _sample(dt: float) -> float:
 	var pitch := float(live.pitch)
 	var lfo_hz := float(live.lfo_hz)
 	var lfo_depth := float(live.lfo_depth)
+	var vib_hz := float(live.vib_hz)
+	var vib_depth := float(live.vib_depth)
 	var master := float(live.master)
 
 	if heat_warn or heat >= 80.0:
@@ -448,12 +604,34 @@ func _sample(dt: float) -> float:
 		pulse = sin((pulse_phase / pulse_duty) * PI)
 	pulse *= pulse_amp * stutter_gate
 
-	var tone_hz := maxf(drone_hz * pitch, 1.0)
+	# Vibrato modulates drone instantaneous pitch (sfxr vib).
+	vib_phase = fmod(vib_phase + maxf(vib_hz, 0.0) * dt, 1.0)
+	var vib := 1.0 + vib_depth * sin(vib_phase * TAU)
+
+	var tone_hz := maxf(drone_hz * pitch * vib, 1.0)
 	drone_phase = fmod(drone_phase + tone_hz * dt, 1.0)
 	sub_phase = fmod(sub_phase + tone_hz * 0.5 * dt, 1.0)
-	# Continuous low saw at audio rate; pitch dial scales drone_hz.
-	var drone := (2.0 * drone_phase - 1.0) * drone_amp
+
+	# Drone wave: 0=saw, 1=square with duty (sfxr square/saw).
+	var drone_raw := 0.0
+	if drone_wave >= 0.5:
+		var duty := clampf(drone_duty, 0.02, 0.98)
+		drone_raw = 0.5 if drone_phase < duty else -0.5
+	else:
+		drone_raw = 2.0 * drone_phase - 1.0
+	var drone := drone_raw * drone_amp
 	var sub := sin(sub_phase * TAU) * sub_amp
+
+	# Resonant LPF on drone(+sub) only — sfxr fltw/fltdmp style, cutoff in Hz.
+	var body := drone + sub
+	var fltw := clampf(pow(clampf(drone_lpf / (MIX_RATE * 0.45), 0.0, 1.0), 3.0) * 0.1, 0.0001, 0.1)
+	var fltdmp := 5.0 / (1.0 + pow(clampf(drone_lpf_res, 0.0, 1.0), 2.0) * 20.0) * (0.01 + fltw)
+	if fltdmp > 0.8:
+		fltdmp = 0.8
+	drone_bp_z += (body - drone_lp_z) * fltw
+	drone_bp_z -= drone_bp_z * fltdmp
+	drone_lp_z += drone_bp_z
+	var filtered_body := drone_lp_z
 
 	var n := _noise()
 	var noise_in := n * noise_amp
@@ -461,32 +639,20 @@ func _sample(dt: float) -> float:
 		noise_in += absf(n) * n * 0.09
 	if grit > 0.0:
 		noise_in += n * grit * (0.5 + 0.5 * sin(t * 47.0 * pitch))
+
+	# Noise HPF (sfxr flthp) then LPF — cutoff params in Hz.
+	var hp_coeff := clampf(1.0 - exp(-TAU * maxf(noise_hpf, 1.0) / MIX_RATE), 0.0, 0.999)
+	noise_hp_z += hp_coeff * (noise_in - noise_hp_z)
+	var hp_out := noise_in - noise_hp_z
 	# One-pole LP: noise_lp is cutoff in Hz; air around the drone, not the body.
 	var lp_coeff := 1.0 - exp(-TAU * maxf(noise_lp, 1.0) / MIX_RATE)
-	lp_z += lp_coeff * (noise_in - lp_z)
+	lp_z += lp_coeff * (hp_out - lp_z)
 	var hiss := lp_z
 
-	var bed := (hiss + pulse + drone + sub) * lfo * bed_gain * master
+	var bed := (hiss + pulse + filtered_body) * lfo * bed_gain * master
 	out += bed
 
-	if thud_t >= 0.0:
-		var u := thud_t
-		var env := exp(-u * float(thud.decay))
-		var th := sin(TAU * (float(thud.freq) - u * 70.0) * u) * env * float(thud.amp)
-		th += _noise() * env * float(thud.noise)
-		out += th
-
-	if alarm_t >= 0.0:
-		var a := alarm_t
-		var beep := 0.0
-		var cycle := fmod(a, float(alarm.rate))
-		if cycle < float(alarm.on):
-			beep = sin(TAU * float(alarm.hz) * a) * float(alarm.amp)
-			beep += sin(TAU * float(alarm.hz2) * a) * float(alarm.amp) * (0.12 / 0.22)
-		var aenv := 1.0
-		if a > 1.4:
-			aenv = clampf(1.0 - (a - 1.4) / 0.4, 0.0, 1.0)
-		out += beep * aenv
+	# One-shots play on oneshot_player (sfxr WAV) — not mixed into the bed.
 
 	if kill_cut:
 		out *= 0.0

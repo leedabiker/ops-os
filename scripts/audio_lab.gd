@@ -10,13 +10,14 @@ const C8 := Color("#3D2E18")
 var audio = null
 
 var dial_sliders: Dictionary = {}
-var thud_sliders: Dictionary = {}
-var alarm_sliders: Dictionary = {}
 var event_checks: Dictionary = {}
 var mode_buttons: Dictionary = {}
+var oneshot_preset_opts: Dictionary = {}
 var bake_edit: TextEdit
 var syncing_ui: bool = false
 var status_label: Label
+
+const PRESET_NAMES := ["HIT", "EXPLOSION", "BLIP", "LASER", "CLICK", "MUTATE", "JUMP", "POWERUP"]
 
 
 func _ready() -> void:
@@ -29,6 +30,7 @@ func setup(a) -> void:
 	_build_ui()
 	audio.set_mode("HIGH")
 	_pull_dials_from_audio()
+	_pull_oneshot_presets()
 	_highlight_mode("HIGH")
 
 
@@ -77,8 +79,13 @@ func _build_ui() -> void:
 		["master", "master / bed gain", 0.0, 2.0, 0.01],
 		["drone_hz", "drone Hz", 30.0, 100.0, 0.5],
 		["drone_amp", "drone amp", 0.0, 0.4, 0.001],
+		["drone_wave", "drone wave (0=saw 1=sq)", 0.0, 1.0, 1.0],
+		["drone_duty", "drone duty (square)", 0.05, 0.95, 0.01],
+		["drone_lpf", "drone LPF Hz", 80.0, 4000.0, 10.0],
+		["drone_lpf_res", "drone LPF res 0..1", 0.0, 1.0, 0.01],
 		["sub_amp", "sub amp", 0.0, 0.2, 0.001],
 		["noise_amp", "noise amp", 0.0, 0.2, 0.001],
+		["noise_hpf", "noise HPF Hz", 20.0, 2000.0, 5.0],
 		["noise_lp", "noise LP Hz (cutoff)", 100.0, 8000.0, 10.0],
 		["pulse_amp", "pulse amp", 0.0, 0.4, 0.001],
 		["pulse_hz", "pulse Hz", 0.1, 8.0, 0.01],
@@ -86,6 +93,8 @@ func _build_ui() -> void:
 		["pitch", "pitch", 0.4, 2.0, 0.01],
 		["lfo_hz", "LFO rate", 0.0, 0.5, 0.001],
 		["lfo_depth", "LFO depth", 0.0, 1.0, 0.01],
+		["vib_hz", "vibrato Hz", 0.0, 2.0, 0.01],
+		["vib_depth", "vibrato depth", 0.0, 0.25, 0.001],
 		["grit", "grit", 0.0, 0.3, 0.001],
 	]
 	for spec in dial_specs:
@@ -118,36 +127,9 @@ func _build_ui() -> void:
 		ev_row.add_child(cb)
 		event_checks[ev] = cb
 
-	col.add_child(_section("Jam thud"))
-	var thud_specs := [
-		["freq", "base freq", 10.0, 120.0, 0.5],
-		["decay", "decay", 2.0, 40.0, 0.1],
-		["noise", "noise mix", 0.0, 0.5, 0.01],
-		["amp", "amp", 0.0, 1.5, 0.01],
-	]
-	for spec in thud_specs:
-		var row2 := _make_slider_row(str(spec[0]), str(spec[1]), float(spec[2]), float(spec[3]), float(spec[4]), "thud")
-		thud_sliders[spec[0]] = row2
-		col.add_child(row2.box)
-	var thud_btn := _make_button("Fire thud")
-	thud_btn.pressed.connect(func(): audio.fire_thud())
-	col.add_child(thud_btn)
-
-	col.add_child(_section("Intrusion alarm"))
-	var alarm_specs := [
-		["hz", "tone Hz", 200.0, 1600.0, 1.0],
-		["hz2", "tone Hz2", 100.0, 1200.0, 1.0],
-		["rate", "beep rate", 0.08, 1.0, 0.01],
-		["on", "beep on", 0.02, 0.8, 0.01],
-		["amp", "amp", 0.0, 0.6, 0.01],
-	]
-	for spec in alarm_specs:
-		var row3 := _make_slider_row(str(spec[0]), str(spec[1]), float(spec[2]), float(spec[3]), float(spec[4]), "alarm")
-		alarm_sliders[spec[0]] = row3
-		col.add_child(row3.box)
-	var alarm_btn := _make_button("Fire alarm")
-	alarm_btn.pressed.connect(func(): audio.fire_alarm())
-	col.add_child(alarm_btn)
+	col.add_child(_section("One-shots (sfxr)"))
+	for kind in ["thud", "alarm", "kill"]:
+		col.add_child(_make_oneshot_row(kind))
 
 	col.add_child(_section("Bake"))
 	var bake_btn := _make_button("print bake")
@@ -161,7 +143,44 @@ func _build_ui() -> void:
 	_style_textedit(bake_edit)
 	col.add_child(bake_edit)
 
-	_pull_thud_alarm_from_audio()
+
+func _make_oneshot_row(kind: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+
+	var lab := Label.new()
+	lab.text = kind
+	lab.custom_minimum_size = Vector2(70, 0)
+	_style_label(lab, C6, 13)
+	row.add_child(lab)
+
+	var opt := OptionButton.new()
+	for i in PRESET_NAMES.size():
+		opt.add_item(PRESET_NAMES[i], i)
+	opt.custom_minimum_size = Vector2(140, 28)
+	opt.add_theme_color_override("font_color", C7)
+	opt.item_selected.connect(func(idx: int):
+		if syncing_ui or audio == null:
+			return
+		audio.oneshots[kind]["preset"] = PRESET_NAMES[idx]
+		status_label.text = "%s preset = %s" % [kind, PRESET_NAMES[idx]]
+	)
+	row.add_child(opt)
+	oneshot_preset_opts[kind] = opt
+
+	var fire := _make_button("Fire %s" % kind)
+	fire.pressed.connect(func():
+		match kind:
+			"thud":
+				audio.fire_thud()
+			"alarm":
+				audio.fire_alarm()
+			"kill":
+				audio.fire_kill()
+		status_label.text = "fired sfxr %s" % kind
+	)
+	row.add_child(fire)
+	return row
 
 
 func _section(title: String) -> Label:
@@ -223,7 +242,7 @@ func _make_slider_row(key: String, label: String, mn: float, mx: float, step: fl
 
 	var lab := Label.new()
 	lab.text = label
-	lab.custom_minimum_size = Vector2(170, 0)
+	lab.custom_minimum_size = Vector2(200, 0)
 	_style_label(lab, C6, 13)
 	box.add_child(lab)
 
@@ -282,10 +301,6 @@ func _on_slider(group: String, key: String, v: float) -> void:
 		d[key] = v
 		audio.set_dials(d)
 		status_label.text = "mode %s — dials live" % audio.get_mode()
-	elif group == "thud":
-		audio.thud[key] = v
-	elif group == "alarm":
-		audio.alarm[key] = v
 
 
 func _on_preset(m: String) -> void:
@@ -334,16 +349,13 @@ func _pull_dials_from_audio() -> void:
 	syncing_ui = false
 
 
-func _pull_thud_alarm_from_audio() -> void:
+func _pull_oneshot_presets() -> void:
 	syncing_ui = true
-	for k in thud_sliders.keys():
-		var row: Dictionary = thud_sliders[k]
-		var v := float(audio.thud[k])
-		row.slider.value = v
-		row.val.text = _fmt(v)
-	for k in alarm_sliders.keys():
-		var row2: Dictionary = alarm_sliders[k]
-		var v2 := float(audio.alarm[k])
-		row2.slider.value = v2
-		row2.val.text = _fmt(v2)
+	for kind in oneshot_preset_opts.keys():
+		var opt: OptionButton = oneshot_preset_opts[kind]
+		var name: String = str(audio.oneshots[kind].get("preset", "HIT")).to_upper()
+		var idx := PRESET_NAMES.find(name)
+		if idx < 0:
+			idx = 0
+		opt.select(idx)
 	syncing_ui = false

@@ -1,0 +1,7 @@
+Vendored from https://github.com/tomeyro/godot-sfxr (branch 4.x)
+Commit: 359243b38ed0fbb4919d99f1c94995976b749b2b
+MIT License — see LICENSE (Copyright (c) 2022 Tomas Alvarez)
+Upstream: port of jsfxr / sfxr.
+
+Local patch: cross-file class_name refs also preload() so the addon works
+headless without an editor-built global_script_class_cache.
